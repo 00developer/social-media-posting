@@ -1,0 +1,1 @@
+-- Initial empty migration as per Phase 0 requirement

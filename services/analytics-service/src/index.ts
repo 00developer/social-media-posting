@@ -1,0 +1,324 @@
+import dotenv from 'dotenv';
+import path from 'path';
+import express from 'express';
+import cors from 'cors';
+import crypto from 'crypto';
+import { Queue, Worker, Job } from 'bullmq';
+import { getRedisConnection, upstashRedis } from '@socialpush/shared';
+import { createClient } from '@supabase/supabase-js';
+
+dotenv.config({ path: path.join(__dirname, '../../../.env') });
+
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+const redisConnection = getRedisConnection(process.env.REDIS_URL || 'redis://localhost:6379');
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
+
+function decrypt(text: string) {
+  const textParts = text.split(':');
+  const iv = Buffer.from(textParts.shift()!, 'hex');
+  const encryptedText = Buffer.from(textParts.join(':'), 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+  let decrypted = decipher.update(encryptedText);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString();
+}
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// API route to accept real-time analytics events
+app.post('/api/v1/analytics/event', async (req, res) => {
+  const { postId, platform, eventType } = req.body;
+  if (!postId || !platform || !eventType) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  if (!['views', 'likes', 'shares'].includes(eventType)) {
+    return res.status(400).json({ error: 'Invalid eventType' });
+  }
+
+  try {
+    // Atomically increment the specific counter in Redis
+    const key = `analytics:${postId}:${platform}:${eventType}`;
+    if (upstashRedis) {
+      await upstashRedis.incr(key);
+    } else {
+      await redisConnection.incr(key);
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error incrementing counter:', err);
+    res.status(500).json({ error: 'Failed to record event' });
+  }
+});
+
+const PORT = process.env.PORT || 3008;
+app.listen(PORT, () => {
+  console.log(`Analytics API running on port ${PORT}`);
+});
+
+const ANALYTICS_QUEUE_NAME = 'analytics-queue';
+const analyticsQueue = new Queue(ANALYTICS_QUEUE_NAME, { connection: redisConnection });
+
+async function setupCron() {
+  await analyticsQueue.add('sync-analytics', {}, {
+    repeat: { pattern: '*/5 * * * *' } // Every 5 minutes
+  });
+  console.log('Analytics Worker started. Scheduled to sync every 5 minutes.');
+}
+
+const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
+  console.log(`[AnalyticsService] Running analytics sync...`);
+  
+  try {
+    // 1. Sync real-time events from Redis
+    let allKeys: string[] = [];
+    if (upstashRedis) {
+      let cursor = 0;
+      do {
+        const [nextCursor, keys] = await upstashRedis.scan(cursor, { match: 'analytics:*', count: 100 });
+        allKeys.push(...keys);
+        cursor = Number(nextCursor);
+      } while (cursor !== 0);
+    } else {
+      let cursor = '0';
+      do {
+        const [nextCursor, keys] = await redisConnection.scan(cursor, 'MATCH', 'analytics:*', 'COUNT', 100);
+        allKeys.push(...keys);
+        cursor = nextCursor;
+      } while (cursor !== '0');
+    }
+
+    if (allKeys.length > 0) {
+      const aggregated: Record<string, { views: number, likes: number, shares: number }> = {};
+
+      for (const key of allKeys) {
+        let valStr: string | null = null;
+        if (upstashRedis) {
+          const v = await upstashRedis.get(key);
+          valStr = v !== null ? String(v) : null;
+          if (valStr) await upstashRedis.del(key);
+        } else {
+          valStr = await redisConnection.getdel(key) as string;
+        }
+
+        if (!valStr) continue;
+        const val = parseInt(valStr, 10);
+        if (isNaN(val)) continue;
+
+        const [, postId, platform, eventType] = key.split(':');
+        const aggKey = `${postId}:${platform}`;
+        if (!aggregated[aggKey]) {
+          aggregated[aggKey] = { views: 0, likes: 0, shares: 0 };
+        }
+
+        if (eventType === 'views') aggregated[aggKey].views += val;
+        if (eventType === 'likes') aggregated[aggKey].likes += val;
+        if (eventType === 'shares') aggregated[aggKey].shares += val;
+      }
+
+      for (const [aggKey, counts] of Object.entries(aggregated)) {
+        const [postId, platform] = aggKey.split(':');
+
+        const { data: existing } = await supabase.from('analytics')
+          .select('*')
+          .eq('post_id', postId)
+          .eq('platform', platform)
+          .single();
+          
+        if (existing) {
+          await supabase.from('analytics')
+            .update({
+              likes: existing.likes + counts.likes,
+              shares: existing.shares + counts.shares,
+              views: existing.views + counts.views,
+              recorded_at: new Date().toISOString()
+            })
+            .eq('id', existing.id);
+        } else {
+          const { data: jobData } = await supabase.from('publish_jobs')
+            .select('user_id')
+            .eq('post_id', postId)
+            .single();
+
+          await supabase.from('analytics')
+            .insert({
+              post_id: postId,
+              user_id: jobData?.user_id || 'unknown',
+              platform: platform,
+              likes: counts.likes,
+              shares: counts.shares,
+              views: counts.views,
+              recorded_at: new Date().toISOString()
+            });
+        }
+      }
+      console.log(`[AnalyticsService] Successfully synced redis analytics for ${Object.keys(aggregated).length} posts.`);
+    }
+
+    // 2. Sync YouTube Analytics via API
+    const { data: ytSessions } = await supabase.from('youtube_upload_sessions')
+      .select('post_id, user_id, video_id')
+      .eq('status', 'completed')
+      .not('video_id', 'is', null);
+
+    if (ytSessions && ytSessions.length > 0) {
+      for (const session of ytSessions) {
+        try {
+          const { data: account } = await supabase.from('social_accounts')
+            .select('*')
+            .eq('user_id', session.user_id)
+            .eq('platform', 'youtube')
+            .single();
+
+          if (!account) continue;
+
+          let activeToken = decrypt(account.access_token_encrypted);
+
+          // Test token by fetching basic stats
+          let ytRes = await fetch(`https://youtube.googleapis.com/youtube/v3/videos?part=statistics&id=${session.video_id}`, {
+            headers: { 'Authorization': `Bearer ${activeToken}` }
+          });
+
+          if (ytRes.status === 401) {
+            // Attempt refresh
+            const refreshRes = await fetch('http://localhost:3001/api/v1/auth/youtube/refresh', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ accountId: account.id })
+            });
+            const refreshData = await refreshRes.json();
+            if (refreshData.success) {
+              activeToken = refreshData.accessToken;
+              ytRes = await fetch(`https://youtube.googleapis.com/youtube/v3/videos?part=statistics&id=${session.video_id}`, {
+                headers: { 'Authorization': `Bearer ${activeToken}` }
+              });
+            }
+          }
+
+          if (ytRes.ok) {
+            const ytData = await ytRes.json();
+            if (ytData.items && ytData.items.length > 0) {
+              const stats = ytData.items[0].statistics;
+              const views = parseInt(stats.viewCount || '0', 10);
+              const likes = parseInt(stats.likeCount || '0', 10);
+              const comments = parseInt(stats.commentCount || '0', 10);
+
+              const { data: existing } = await supabase.from('analytics')
+                .select('*')
+                .eq('post_id', session.post_id)
+                .eq('platform', 'youtube')
+                .single();
+
+              if (existing) {
+                await supabase.from('analytics')
+                  .update({
+                    views,
+                    likes,
+                    shares: comments, // Map comments to shares for standard schema
+                    recorded_at: new Date().toISOString()
+                  })
+                  .eq('id', existing.id);
+              } else {
+                await supabase.from('analytics')
+                  .insert({
+                    post_id: session.post_id,
+                    user_id: session.user_id,
+                    platform: 'youtube',
+                    views,
+                    likes,
+                    shares: comments,
+                    recorded_at: new Date().toISOString()
+                  });
+              }
+            }
+          }
+        } catch (err: any) {
+          console.error(`[AnalyticsService] Failed to sync YouTube stats for video ${session.video_id}:`, err.message);
+        }
+      }
+      console.log(`[AnalyticsService] Successfully synced YouTube API stats for ${ytSessions.length} videos.`);
+    }
+
+    // 3. Sync Pinterest Analytics via API
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const { data: pinterestPins } = await supabase.from('pinterest_published_pins')
+      .select('*')
+      .gte('created_at', ninetyDaysAgo.toISOString());
+
+    if (pinterestPins && pinterestPins.length > 0) {
+      for (const pin of pinterestPins) {
+        try {
+          const { data: account } = await supabase.from('social_accounts')
+            .select('*')
+            .eq('user_id', pin.user_id)
+            .eq('platform', 'pinterest')
+            .single();
+
+          if (!account) continue;
+
+          const activeToken = decrypt(account.access_token_encrypted);
+          
+          const endDate = new Date().toISOString().split('T')[0];
+          // Start date needs to be at least the creation date, but if it was created today, start and end are the same
+          const pinStartDateStr = pin.created_at.split('T')[0];
+          
+          const url = `https://api.pinterest.com/v5/pins/${pin.pin_id}/analytics?start_date=${pinStartDateStr}&end_date=${endDate}&metric_types=IMPRESSION,OUTBOUND_CLICK,SAVE`;
+
+          const pinRes = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${activeToken}` }
+          });
+
+          if (pinRes.ok) {
+            const pinData = await pinRes.json();
+            
+            const summary = pinData.all_metrics || {};
+            const views = summary.IMPRESSION || 0;
+            const clicks = summary.OUTBOUND_CLICK || 0;
+            const saves = summary.SAVE || 0;
+
+            const { data: existing } = await supabase.from('analytics')
+              .select('*')
+              .eq('post_id', pin.post_id)
+              .eq('platform', 'pinterest')
+              .single();
+
+            if (existing) {
+              await supabase.from('analytics')
+                .update({
+                  views,
+                  likes: saves,
+                  shares: clicks,
+                  recorded_at: new Date().toISOString()
+                })
+                .eq('id', existing.id);
+            } else {
+              await supabase.from('analytics')
+                .insert({
+                  post_id: pin.post_id,
+                  user_id: pin.user_id,
+                  platform: 'pinterest',
+                  views,
+                  likes: saves,
+                  shares: clicks,
+                  recorded_at: new Date().toISOString()
+                });
+            }
+          } else {
+            console.warn(`[AnalyticsService] Failed to fetch Pinterest stats for pin ${pin.pin_id}:`, await pinRes.text());
+          }
+        } catch (err: any) {
+          console.error(`[AnalyticsService] Failed to sync Pinterest stats for pin ${pin.pin_id}:`, err.message);
+        }
+      }
+      console.log(`[AnalyticsService] Successfully synced Pinterest API stats for ${pinterestPins.length} pins.`);
+    }
+
+  } catch (err: any) {
+    console.error(`[AnalyticsService] Error:`, err.message);
+  }
+}, { connection: redisConnection });
+
+setupCron();

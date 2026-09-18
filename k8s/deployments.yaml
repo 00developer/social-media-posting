@@ -1,0 +1,107 @@
+# Kubernetes manifests for SocialPush Microservices
+# These are production-ready deployment specs meant for EKS/GKE/DigitalOcean.
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: socialpush-secrets
+type: Opaque
+data:
+  # Base64 encoded secrets would go here in production
+  # SUPABASE_URL: ...
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: account-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: account-service
+  template:
+    metadata:
+      labels:
+        app: account-service
+    spec:
+      containers:
+      - name: account-service
+        image: account-service:latest
+        ports:
+        - containerPort: 3001
+        envFrom:
+        - secretRef:
+            name: socialpush-secrets
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: account-service
+spec:
+  selector:
+    app: account-service
+  ports:
+  - port: 80
+    targetPort: 3001
+
+---
+# Repeat for Post Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: post-service
+  template:
+    metadata:
+      labels:
+        app: post-service
+    spec:
+      containers:
+      - name: post-service
+        image: post-service:latest
+        ports:
+        - containerPort: 3002
+        envFrom:
+        - secretRef:
+            name: socialpush-secrets
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: post-service
+spec:
+  selector:
+    app: post-service
+  ports:
+  - port: 80
+    targetPort: 3002
+
+---
+# Worker Deployment (No service needed, it pulls from Redis)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bullmq-worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: bullmq-worker
+  template:
+    metadata:
+      labels:
+        app: bullmq-worker
+    spec:
+      containers:
+      - name: bullmq-worker
+        image: worker:latest
+        envFrom:
+        - secretRef:
+            name: socialpush-secrets

@@ -1,0 +1,26 @@
+{
+  "name": "socialpush",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:account": "npm run dev -w @socialpush/account-service",
+    "dev:post": "npm run dev -w @socialpush/post-service",
+    "dev:publishing": "npm run dev -w @socialpush/publishing-service",
+    "dev:all": "concurrently \"npm run dev -w apps/web\" \"npm run dev:account\" \"npm run dev:post\" \"npm run dev:publishing\" \"npm run dev:scheduling\" \"npm run dev:worker\" \"npm run dev:media\" \"npm run dev:notification\" \"npm run dev:analytics\" \"npm run dev:team\"",
+    "dev:scheduling": "npm run dev -w @socialpush/scheduling-service",
+    "dev:worker": "npm run dev -w @socialpush/worker",
+    "dev:media": "npm run dev -w @socialpush/media-service",
+    "dev:notification": "npm run dev -w @socialpush/notification-service",
+    "dev:analytics": "npm run dev -w @socialpush/analytics-service",
+    "dev:team": "npm run dev -w @socialpush/team-service"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.0.0"
+  }
+}

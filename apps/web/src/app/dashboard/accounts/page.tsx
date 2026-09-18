@@ -85,7 +85,7 @@ export default function AccountsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
             {accounts.map(acc => {
-              const isExpiringSoon = acc.platform === 'linkedin' && acc.refresh_token_expires_at && new Date(acc.refresh_token_expires_at).getTime() - Date.now() < 30 * 24 * 60 * 60 * 1000;
+              const isExpiringSoon = acc.platform === 'linkedin' && typeof acc.refresh_token_expires_at === 'string' && new Date(acc.refresh_token_expires_at).getTime() - Date.now() < 30 * 24 * 60 * 60 * 1000;
               
               return (
               <div key={acc.id} className="bg-white border border-gray-200 p-4 rounded-2xl flex items-center justify-between shadow-sm hover:border-indigo-200 transition-colors group">

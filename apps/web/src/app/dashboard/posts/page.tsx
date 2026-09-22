@@ -7,6 +7,7 @@ import { getMediaFrame, getPostContentType } from '@/lib/mediaFrame';
 import { PostComposer } from '@/components/post/PostComposer';
 import { getPostStart } from '@/lib/calendarStatus';
 import { getFailedPlatforms, getFailureLines, getRetryNotes, isPostFailed, retryButtonLabel, retryFailedPost } from '@/lib/postRetry';
+import { POST_SERVICE_URL, SCHEDULING_SERVICE_URL } from '@/lib/apiUrls';
 
 export default function PostsPage() {
   const { user, activeTeam, posts, analytics, fetchTeamData } = useDashboard();
@@ -25,7 +26,7 @@ export default function PostsPage() {
     const platforms = platformsStr.split(',').map(p => p.trim().toLowerCase());
     setIsPublishing(true);
     try {
-      const res = await fetch(`http://localhost:3004/api/v1/schedules`, {
+      const res = await fetch(`${SCHEDULING_SERVICE_URL}/api/v1/schedules`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -62,7 +63,7 @@ export default function PostsPage() {
     if (!user || !activeTeam) return;
     if (!confirm('Are you sure you want to delete this post?')) return;
     try {
-      const res = await fetch(`http://localhost:3002/api/v1/posts/${postId}?userId=${user.id}&teamId=${activeTeam.id}`, { method: 'DELETE' });
+      const res = await fetch(`${POST_SERVICE_URL}/api/v1/posts/${postId}?userId=${user.id}&teamId=${activeTeam.id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchTeamData();
       } else {

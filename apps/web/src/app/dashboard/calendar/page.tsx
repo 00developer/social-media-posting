@@ -14,6 +14,7 @@ import type { EditablePostRecord } from '@/lib/calendarEdit';
 import { toEvent, type EventProps } from '@/lib/calendarEvent';
 import { getPrefill } from '@/lib/calendarPrefill';
 import { PLATFORM_SHORT_LABELS, STATUS_META, type CalendarStatusKey } from '@/lib/calendarStatus';
+import { POST_SERVICE_URL } from '@/lib/apiUrls';
 
 function renderEventContent(arg: EventContentArg) {
   const { statusLabel, platforms } = arg.event.extendedProps as EventProps;
@@ -114,7 +115,7 @@ function TeamCalendar({ userId, teamId, canCreate, refreshTimeline }: { userId: 
     async (info: EventSourceFuncArg): Promise<EventInput[]> => {
       try {
         const params = new URLSearchParams({ userId, teamId, from: info.startStr, to: info.endStr });
-        const res = await fetch(`http://localhost:3002/api/v1/posts?${params.toString()}`);
+        const res = await fetch(`${POST_SERVICE_URL}/api/v1/posts?${params.toString()}`);
         const body = await res.json();
         if (!res.ok || !body.success) {
           throw new Error(body.error || `Request failed (${res.status})`);

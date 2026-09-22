@@ -26,6 +26,8 @@ process.on('unhandledRejection', (err: any) => {
 });
 const redisConnection = getRedisConnection(process.env.REDIS_URL || 'redis://localhost:6379');
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
+// Server-to-server call, not exposed to the browser - a plain env var (not NEXT_PUBLIC_*) is enough.
+const ACCOUNT_SERVICE_URL = process.env.ACCOUNT_SERVICE_URL || 'http://localhost:3001';
 
 function decrypt(text: string) {
   const textParts = text.split(':');
@@ -201,7 +203,7 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
 
           if (ytRes.status === 401) {
             // Attempt refresh
-            const refreshRes = await fetch('http://localhost:3001/api/v1/auth/youtube/refresh', {
+            const refreshRes = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/youtube/refresh`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ accountId: account.id })

@@ -33,6 +33,8 @@ process.on('unhandledRejection', (err: any) => {
 });
 const redisConnection = getRedisConnection(process.env.REDIS_URL || 'redis://localhost:6379');
 const notificationsQueue = getNotificationsQueue(redisConnection);
+// Server-to-server call, not exposed to the browser - a plain env var (not NEXT_PUBLIC_*) is enough.
+const PUBLISHING_SERVICE_URL = process.env.PUBLISHING_SERVICE_URL || 'http://localhost:3003';
 
 // Same pruning approach as PUBLISH_JOB_OPTIONS in scheduling-service: BullMQ removes a job from
 // Redis once it's this old OR the queue has this many finished jobs, whichever comes first. The
@@ -90,7 +92,7 @@ const worker = new Worker(PUBLISH_QUEUE_NAME, async (job: Job, token?: string) =
     const { data: post } = await supabase.from('posts').select('content').eq('id', postId).single();
     contentExcerpt = post?.content ? `"${post.content.substring(0, 30)}${post.content.length > 30 ? '...' : ''}"` : 'Your post';
 
-    const res = await fetch(`http://localhost:3003/api/v1/publish/${jobId}`, {
+    const res = await fetch(`${PUBLISHING_SERVICE_URL}/api/v1/publish/${jobId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });

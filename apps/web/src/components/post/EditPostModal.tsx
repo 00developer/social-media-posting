@@ -15,6 +15,7 @@ import {
   THREADS_MAX_BYTES,
   type EditablePostRecord,
 } from '@/lib/calendarEdit';
+import { POST_SERVICE_URL } from '@/lib/apiUrls';
 
 export type { EditablePostRecord };
 
@@ -85,7 +86,7 @@ export function EditPostModal({ post, userId, teamId, isViewer, onClose, onSaved
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`http://localhost:3002/api/v1/posts/${post.id}`, {
+      const res = await fetch(`${POST_SERVICE_URL}/api/v1/posts/${post.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, teamId, content: draft }),

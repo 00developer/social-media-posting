@@ -14,6 +14,8 @@ app.use(express.json());
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
+// Server-to-server call, not exposed to the browser - a plain env var (not NEXT_PUBLIC_*) is enough.
+const ACCOUNT_SERVICE_URL = process.env.ACCOUNT_SERVICE_URL || 'http://localhost:3001';
 
 function decrypt(text: string) {
   const textParts = text.split(':');
@@ -262,7 +264,7 @@ class YouTubeAdapter implements PlatformAdapter {
     
     let activeToken = decryptedToken;
     try {
-      const refreshRes = await fetch('http://localhost:3001/api/v1/auth/youtube/refresh', {
+      const refreshRes = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/youtube/refresh`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ accountId: account.id })

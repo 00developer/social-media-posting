@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useDashboard, type Team } from '@/components/DashboardProvider';
 import { supabase } from '@/lib/supabase';
+import { TEAM_SERVICE_URL } from '@/lib/apiUrls';
 
 // Keyed by activeTeam.id from the parent (see render below) so switching teams remounts this
 // with a fresh default instead of needing an effect to resync local state from a prop.
@@ -58,7 +59,7 @@ export default function SettingsPage() {
   const handleInvite = async () => {
     if (!inviteEmail || !user || !activeTeam) return;
     try {
-      const res = await fetch(`http://localhost:3009/api/v1/teams/${activeTeam.id}/invite`, {
+      const res = await fetch(`${TEAM_SERVICE_URL}/api/v1/teams/${activeTeam.id}/invite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: inviteEmail, role: inviteRole, inviterId: user.id })
@@ -79,7 +80,7 @@ export default function SettingsPage() {
   const handleBilling = async (newPlan: string) => {
     if (!user || !activeTeam) return;
     try {
-      const res = await fetch(`http://localhost:3009/api/v1/teams/${activeTeam.id}/billing`, {
+      const res = await fetch(`${TEAM_SERVICE_URL}/api/v1/teams/${activeTeam.id}/billing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: newPlan, requesterId: user.id })

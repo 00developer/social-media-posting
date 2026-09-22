@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useDashboard, type Post } from '@/components/DashboardProvider';
 import { PlatformPreviewCard } from '@/components/post/PlatformPreviewCard';
+import { MEDIA_SERVICE_URL, POST_SERVICE_URL, SCHEDULING_SERVICE_URL } from '@/lib/apiUrls';
 
 type PostComposerProps = {
   /** Lets the host page mirror the "uploading" placeholder card in its own timeline. */
@@ -52,7 +53,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
         try {
           const formData = new FormData();
           formData.append('file', file);
-          const res = await fetch('http://localhost:3006/api/v1/media/transcode-preview', {
+          const res = await fetch(`${MEDIA_SERVICE_URL}/api/v1/media/transcode-preview`, {
             method: 'POST',
             body: formData
           });
@@ -98,7 +99,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
         formData.append('platforms', selectedPlatforms.join(','));
         formData.append('contentType', contentType);
 
-        const mediaRes = await fetch(`http://localhost:3006/api/v1/media/upload`, {
+        const mediaRes = await fetch(`${MEDIA_SERVICE_URL}/api/v1/media/upload`, {
           method: 'POST',
           body: formData
         });
@@ -111,7 +112,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
         }
       }
 
-      const res = await fetch(`http://localhost:3002/api/v1/posts`, {
+      const res = await fetch(`${POST_SERVICE_URL}/api/v1/posts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, teamId: activeTeam.id, content: newPostContent, mediaUrl: JSON.stringify(mediaUrls) })
@@ -126,7 +127,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
             ? new Date(scheduleAt) 
             : new Date();
 
-          const scheduleRes = await fetch(`http://localhost:3004/api/v1/schedules`, {
+          const scheduleRes = await fetch(`${SCHEDULING_SERVICE_URL}/api/v1/schedules`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

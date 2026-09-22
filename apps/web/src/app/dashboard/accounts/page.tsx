@@ -1,6 +1,7 @@
 'use client';
 
 import { useDashboard } from '@/components/DashboardProvider';
+import { ACCOUNT_SERVICE_URL } from '@/lib/apiUrls';
 
 export default function AccountsPage() {
   const { user, activeTeam, accounts } = useDashboard();
@@ -15,7 +16,7 @@ export default function AccountsPage() {
     const popup = window.open('', '_blank', 'width=600,height=600');
     
     try {
-      const res = await fetch(`http://localhost:3001/api/v1/auth/${platform}/url?userId=${user.id}&teamId=${activeTeam.id}`);
+      const res = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/${platform}/url?userId=${user.id}&teamId=${activeTeam.id}`);
       const data = await res.json();
       if (data.url) {
         if (popup) {
@@ -47,7 +48,7 @@ export default function AccountsPage() {
     if (!user || !activeTeam) return;
     if (!confirm('Are you sure you want to disconnect this account?')) return;
     try {
-      const res = await fetch(`http://localhost:3001/api/v1/auth/accounts/${id}?userId=${user.id}&teamId=${activeTeam.id}`, {
+      const res = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/accounts/${id}?userId=${user.id}&teamId=${activeTeam.id}`, {
         method: 'DELETE'
       });
       if (res.ok) {

@@ -9,7 +9,21 @@ import { createClient } from '@supabase/supabase-js';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
-const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
+
+process.on('uncaughtException', (err: any) => {
+  if (err.code === 'ECONNRESET') return;
+  console.error('[Analytics] Uncaught Exception:', err.message);
+});
+process.on('unhandledRejection', (err: any) => {
+  if (err.code === 'ECONNRESET' || err.cause?.code === 'ECONNRESET') return;
+  console.error('[Analytics] Unhandled Rejection:', err.message || err);
+});
 const redisConnection = getRedisConnection(process.env.REDIS_URL || 'redis://localhost:6379');
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
 
@@ -63,7 +77,11 @@ const analyticsQueue = new Queue(ANALYTICS_QUEUE_NAME, { connection: redisConnec
 
 async function setupCron() {
   await analyticsQueue.add('sync-analytics', {}, {
-    repeat: { pattern: '*/5 * * * *' } // Every 5 minutes
+    repeat: { pattern: '*/5 * * * *' }, // Every 5 minutes
+    // Without this, every run (288/day) leaves a finished job in Redis forever - prune like the
+    // other queues (publish-queue's PUBLISH_JOB_OPTIONS, notifications-queue's NOTIFICATION_JOB_OPTIONS).
+    removeOnComplete: { age: 1 * 24 * 3600, count: 500 },
+    removeOnFail: { age: 7 * 24 * 3600, count: 100 },
   });
   console.log('Analytics Worker started. Scheduled to sync every 5 minutes.');
 }
@@ -316,9 +334,88 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
       console.log(`[AnalyticsService] Successfully synced Pinterest API stats for ${pinterestPins.length} pins.`);
     }
 
+    // 4. Sync Threads Analytics via API
+    const { data: threadsAccounts } = await supabase.from('social_accounts')
+      .select('*')
+      .eq('platform', 'threads');
+
+    if (threadsAccounts && threadsAccounts.length > 0) {
+      for (const account of threadsAccounts) {
+        try {
+          const activeToken = decrypt(account.access_token_encrypted);
+          
+          // Fetch recent threads
+          const threadsRes = await fetch(`https://graph.threads.net/v1.0/me/threads?fields=id,text&access_token=${activeToken}`);
+          if (!threadsRes.ok) continue;
+          
+          const threadsData = await threadsRes.json();
+          const threads = threadsData.data || [];
+          
+          for (const thread of threads) {
+             if (!thread.text) continue;
+             
+             // Find matching post in our DB by text content (since we cannot add new tables for Threads)
+             const { data: matchedPost } = await supabase.from('posts')
+               .select('id')
+               .eq('user_id', account.user_id)
+               .eq('content', thread.text)
+               .limit(1)
+               .maybeSingle();
+               
+             if (!matchedPost) continue;
+             
+             // Fetch insights for this specific thread
+             const insightsRes = await fetch(`https://graph.threads.net/v1.0/${thread.id}/insights?metric=views,likes,replies,reposts,quotes&access_token=${activeToken}`);
+             if (!insightsRes.ok) continue;
+             
+             const insightsData = await insightsRes.json();
+             const metrics = insightsData.data || [];
+             let views = 0, likes = 0, replies = 0, reposts = 0, quotes = 0;
+             
+             for (const m of metrics) {
+                if (m.name === 'views') views = m.values[0].value;
+                if (m.name === 'likes') likes = m.values[0].value;
+                if (m.name === 'replies') replies = m.values[0].value;
+                if (m.name === 'reposts') reposts = m.values[0].value;
+                if (m.name === 'quotes') quotes = m.values[0].value;
+             }
+             
+             const shares = reposts + quotes + replies;
+             
+             const { data: existing } = await supabase.from('analytics')
+                .select('id')
+                .eq('post_id', matchedPost.id)
+                .eq('platform', 'threads')
+                .maybeSingle();
+                
+             if (existing) {
+                await supabase.from('analytics').update({
+                   views, likes, shares, recorded_at: new Date().toISOString()
+                }).eq('id', existing.id);
+             } else {
+                await supabase.from('analytics').insert({
+                   post_id: matchedPost.id,
+                   user_id: account.user_id,
+                   platform: 'threads',
+                   views, likes, shares, recorded_at: new Date().toISOString()
+                });
+             }
+          }
+        } catch (err: any) {
+           console.error(`[AnalyticsService] Failed to sync Threads stats for user ${account.user_id}:`, err.message);
+        }
+      }
+      console.log(`[AnalyticsService] Successfully synced Threads API stats for ${threadsAccounts.length} accounts.`);
+    }
+
   } catch (err: any) {
     console.error(`[AnalyticsService] Error:`, err.message);
   }
 }, { connection: redisConnection });
 
 setupCron();
+
+worker.on('error', (err) => {
+  if ((err as any).code === 'ECONNRESET') return;
+  console.error(`[AnalyticsService] Internal error:`, err.message);
+});

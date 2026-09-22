@@ -21,6 +21,7 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = (0, supabase_js_1.createClient)(supabaseUrl, supabaseServiceKey);
 const oauthStates = new Map();
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
 function encrypt(text) {
     const iv = crypto_1.default.randomBytes(16);
     const cipher = crypto_1.default.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
@@ -57,22 +58,34 @@ app.get('/api/v1/auth/:platform/url', async (req, res) => {
     }
     if (plan === 'free') {
         const { count } = await supabase.from('social_accounts').select('*', { count: 'exact', head: true }).eq('team_id', teamId);
-        if (count !== null && count >= 3) {
-            return res.status(402).json({ error: 'Billing limit reached: Free plan allows max 3 accounts.' });
+        if (count !== null && count >= 10) {
+            return res.status(402).json({ error: 'Billing limit reached: Free plan allows max 10 accounts.' });
         }
     }
     if (platform === 'twitter') {
         const client = new twitter_api_v2_1.TwitterApi({ clientId: process.env.TWITTER_CLIENT_ID || 'mock', clientSecret: process.env.TWITTER_CLIENT_SECRET || 'mock' });
-        const { url, codeVerifier, state } = client.generateOAuth2AuthLink('http://localhost:3001/api/v1/auth/twitter/callback', { scope: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'] });
+        const { url, codeVerifier, state } = client.generateOAuth2AuthLink(`${API_BASE_URL}/api/v1/auth/twitter/callback`, { scope: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'] });
         oauthStates.set(state, { codeVerifier, state, userId: userId.toString(), teamId: teamId.toString() });
         res.json({ url });
     }
-    else if (platform === 'facebook' || platform === 'instagram') {
+    else if (platform === 'facebook' || platform === 'instagram' || platform === 'threads') {
         const state = crypto_1.default.randomBytes(16).toString('hex');
-        const appId = process.env.FACEBOOK_APP_ID;
-        const redirectUri = encodeURIComponent(`http://localhost:3001/api/v1/auth/${platform}/callback`);
-        const scope = encodeURIComponent('pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts,publish_video');
-        const url = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
+        const appId = platform === 'threads' ? process.env.THREADS_CLIENT_ID : process.env.FACEBOOK_APP_ID;
+        const redirectUri = encodeURIComponent(`${API_BASE_URL}/api/v1/auth/${platform}/callback`);
+        let scopeStr = '';
+        if (platform === 'threads') {
+            scopeStr = encodeURIComponent('threads_basic,threads_content_publish');
+        }
+        else {
+            scopeStr = encodeURIComponent('pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts,publish_video');
+        }
+        let url = '';
+        if (platform === 'threads') {
+            url = `https://threads.net/oauth/authorize?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scopeStr}&response_type=code&state=${state}`;
+        }
+        else {
+            url = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${state}&scope=${scopeStr}`;
+        }
         oauthStates.set(state, { codeVerifier: 'none', state, userId: userId.toString(), teamId: teamId.toString() });
         res.json({ url });
     }
@@ -85,10 +98,28 @@ app.get('/api/v1/auth/:platform/url', async (req, res) => {
         oauthStates.set(state, { codeVerifier: 'none', state, userId: userId.toString(), teamId: teamId.toString() });
         res.json({ url });
     }
-    else if (['linkedin', 'tiktok', 'pinterest'].includes(platform)) {
+    else if (platform === 'linkedin') {
+        const state = crypto_1.default.randomBytes(16).toString('hex');
+        const clientId = process.env.LINKEDIN_CLIENT_ID || 'mock';
+        const redirectUri = process.env.LINKEDIN_REDIRECT_URI || `${API_BASE_URL}/api/v1/auth/linkedin/callback`;
+        const scope = encodeURIComponent('openid profile email w_member_social');
+        const url = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=${scope}`;
+        oauthStates.set(state, { codeVerifier: 'none', state, userId: userId.toString(), teamId: teamId.toString() });
+        res.json({ url });
+    }
+    else if (platform === 'pinterest') {
+        const state = crypto_1.default.randomBytes(16).toString('hex');
+        const clientId = process.env.PINTEREST_CLIENT_ID || 'mock';
+        const redirectUri = process.env.PINTEREST_REDIRECT_URI || `${API_BASE_URL}/api/v1/auth/pinterest/callback`;
+        const scope = encodeURIComponent('boards:read,boards:write,pins:read,pins:write,user_accounts:read');
+        const url = `https://www.pinterest.com/oauth/?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&state=${state}`;
+        oauthStates.set(state, { codeVerifier: 'none', state, userId: userId.toString(), teamId: teamId.toString() });
+        res.json({ url });
+    }
+    else if (platform === 'tiktok') {
         const state = crypto_1.default.randomBytes(16).toString('hex');
         oauthStates.set(state, { codeVerifier: 'mock', state, userId: userId.toString(), teamId: teamId.toString() });
-        res.json({ url: `http://localhost:3001/api/v1/auth/${platform}/callback?state=${state}&code=mock_code` });
+        res.json({ url: `${API_BASE_URL}/api/v1/auth/${platform}/callback?state=${state}&code=mock_code` });
     }
     else {
         res.status(400).json({ error: 'Unknown platform' });
@@ -107,24 +138,48 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
             const { client: loggedClient, accessToken, refreshToken } = await client.loginWithOAuth2({
                 code: code,
                 codeVerifier: session.codeVerifier,
-                redirectUri: 'http://localhost:3001/api/v1/auth/twitter/callback',
+                redirectUri: `${API_BASE_URL}/api/v1/auth/twitter/callback`,
             });
             encryptedAccess = encrypt(accessToken);
             encryptedRefresh = refreshToken ? encrypt(refreshToken) : null;
         }
-        else if (platform === 'facebook' || platform === 'instagram') {
-            const appId = process.env.FACEBOOK_APP_ID;
-            const appSecret = process.env.FACEBOOK_APP_SECRET;
-            const redirectUri = `http://localhost:3001/api/v1/auth/${platform}/callback`;
-            const tokenRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`);
-            const tokenData = await tokenRes.json();
-            if (tokenData.error)
-                throw new Error(tokenData.error.message);
-            const longLivedRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tokenData.access_token}`);
-            const longLivedData = await longLivedRes.json();
-            if (longLivedData.error)
-                throw new Error(longLivedData.error.message);
-            const finalToken = longLivedData.access_token || tokenData.access_token;
+        else if (platform === 'facebook' || platform === 'instagram' || platform === 'threads') {
+            const appId = platform === 'threads' ? process.env.THREADS_CLIENT_ID : process.env.FACEBOOK_APP_ID;
+            const appSecret = platform === 'threads' ? process.env.THREADS_CLIENT_SECRET : process.env.FACEBOOK_APP_SECRET;
+            const redirectUri = `${API_BASE_URL}/api/v1/auth/${platform}/callback`;
+            let finalToken = '';
+            if (platform === 'threads') {
+                const tokenRes = await fetch('https://graph.threads.net/oauth/access_token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                        client_id: appId,
+                        client_secret: appSecret,
+                        grant_type: 'authorization_code',
+                        redirect_uri: redirectUri,
+                        code: code
+                    }).toString()
+                });
+                const tokenData = await tokenRes.json();
+                if (tokenData.error)
+                    throw new Error(tokenData.error_message || tokenData.error.message || 'Failed Threads short-lived token');
+                const longLivedRes = await fetch(`https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=${appSecret}&access_token=${tokenData.access_token}`);
+                const longLivedData = await longLivedRes.json();
+                if (longLivedData.error)
+                    throw new Error(longLivedData.error_message || longLivedData.error.message || 'Failed Threads long-lived token');
+                finalToken = longLivedData.access_token || tokenData.access_token;
+            }
+            else {
+                const tokenRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`);
+                const tokenData = await tokenRes.json();
+                if (tokenData.error)
+                    throw new Error(tokenData.error.message);
+                const longLivedRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tokenData.access_token}`);
+                const longLivedData = await longLivedRes.json();
+                if (longLivedData.error)
+                    throw new Error(longLivedData.error.message);
+                finalToken = longLivedData.access_token || tokenData.access_token;
+            }
             encryptedAccess = encrypt(finalToken);
             encryptedRefresh = encrypt('none');
         }
@@ -148,6 +203,77 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
                 throw new Error(tokenData.error_description || tokenData.error);
             encryptedAccess = encrypt(tokenData.access_token);
             encryptedRefresh = tokenData.refresh_token ? encrypt(tokenData.refresh_token) : encrypt('none');
+        }
+        else if (platform === 'pinterest') {
+            const clientId = process.env.PINTEREST_CLIENT_ID;
+            const clientSecret = process.env.PINTEREST_CLIENT_SECRET;
+            const redirectUri = process.env.PINTEREST_REDIRECT_URI || `${API_BASE_URL}/api/v1/auth/pinterest/callback`;
+            const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+            const tokenRes = await fetch('https://api.pinterest.com/v5/oauth/token', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Basic ${basicAuth}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({
+                    grant_type: 'authorization_code',
+                    code: code,
+                    redirect_uri: redirectUri
+                }).toString()
+            });
+            const tokenData = await tokenRes.json();
+            if (!tokenRes.ok)
+                throw new Error(tokenData.message || 'Failed to get Pinterest token');
+            const encAccess = encrypt(tokenData.access_token);
+            const encRefresh = tokenData.refresh_token ? encrypt(tokenData.refresh_token) : null;
+            const userRes = await fetch('https://api.pinterest.com/v5/user_account', {
+                headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
+            });
+            const userData = await userRes.json();
+            if (!userRes.ok)
+                throw new Error(userData.message || 'Failed to fetch Pinterest profile');
+            const { data: saData, error: saError } = await supabase.from('social_accounts').insert({
+                user_id: session.userId,
+                team_id: session.teamId,
+                platform: 'pinterest',
+                provider_account_id: userData.username || userData.id || 'unknown',
+                handle: userData.username || 'unknown',
+                access_token_encrypted: encAccess,
+                refresh_token_encrypted: encRefresh,
+                refresh_token_expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+                status: 'active'
+            }).select().single();
+            if (saError)
+                throw saError;
+            const boardsRes = await fetch('https://api.pinterest.com/v5/boards', {
+                headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
+            });
+            const boardsData = await boardsRes.json();
+            let boards = boardsData.items || [];
+            if (boards.length === 0) {
+                const createBoardRes = await fetch('https://api.pinterest.com/v5/boards', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${tokenData.access_token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name: 'SocialPush' })
+                });
+                const newBoard = await createBoardRes.json();
+                if (createBoardRes.ok)
+                    boards = [newBoard];
+            }
+            for (const [index, board] of boards.entries()) {
+                await supabase.from('pinterest_boards').insert({
+                    social_account_id: saData.id,
+                    user_id: session.userId,
+                    pinterest_board_id: board.id,
+                    board_name: board.name,
+                    is_default: index === 0
+                });
+            }
+            oauthStates.delete(state);
+            return res.send('<script>window.close();</script>Account connected successfully!');
         }
         else {
             // Mock tokens for LinkedIn etc

@@ -4,15 +4,25 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useDashboard } from './DashboardProvider';
+import { NotificationBell } from './NotificationBell';
 import { supabase } from '@/lib/supabase';
 
+function getGreeting(hour: number) {
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { user, loading, teams, activeTeam, setActiveTeam, notifications } = useDashboard();
+  const { user, loading, teams, activeTeam, setActiveTeam, notifications, markNotificationsRead } = useDashboard();
   const pathname = usePathname();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
+
+  const displayName = user?.email?.split('@')[0] || 'there';
+  const greeting = getGreeting(new Date().getHours());
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">Loading your workspace...</div>;
   if (!user) return null;
@@ -43,6 +53,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             Posts
           </Link>
           <Link 
+            href="/dashboard/calendar" 
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${pathname.includes('/calendar') ? 'bg-indigo-50/80 text-indigo-700 shadow-sm font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            Calendar
+          </Link>
+          <Link 
             href="/dashboard/accounts" 
             className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${pathname.includes('/accounts') ? 'bg-indigo-50/80 text-indigo-700 shadow-sm font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
           >
@@ -57,26 +74,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             Settings
           </Link>
         </nav>
-
-        {/* Notifications in Sidebar */}
-        <div className="p-5 bg-gray-50/50 m-4 rounded-2xl border border-gray-100">
-          <div className="flex items-center gap-2 mb-3">
-            <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Updates</h3>
-          </div>
-          {notifications.length === 0 ? (
-            <p className="text-xs text-gray-400">No new notifications.</p>
-          ) : (
-            <ul className="space-y-3 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-              {notifications.slice(0, 4).map(n => (
-                <li key={n.id} className="relative pl-3">
-                  <span className={`absolute left-0 top-1.5 w-1.5 h-1.5 rounded-full ${n.type === 'success' ? 'bg-green-400' : 'bg-red-400'}`}></span>
-                  <p className="text-[13px] leading-relaxed text-gray-600 line-clamp-2">{n.message as string}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
       </aside>
 
       {/* Main Content Area */}
@@ -108,18 +105,24 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
           
-          <button 
-            onClick={handleLogout} 
-            className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100"
-          >
-            Log Out
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-          </button>
+          <div className="flex items-center gap-2">
+            <NotificationBell notifications={notifications} onMarkRead={markNotificationsRead} />
+            <button 
+              onClick={handleLogout} 
+              className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100"
+            >
+              Log Out
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+            </button>
+          </div>
         </header>
 
         {/* Page Content */}
         <main className="flex-1 p-8 overflow-y-auto">
           <div className="max-w-6xl mx-auto">
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">
+              {greeting}, <span className="capitalize">{displayName}</span> 👋
+            </h2>
             {children}
           </div>
         </main>

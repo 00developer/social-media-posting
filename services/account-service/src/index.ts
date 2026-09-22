@@ -20,6 +20,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const oauthStates = new Map<string, { codeVerifier: string, state: string, userId: string, teamId: string }>();
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
 
 function encrypt(text: string) {
   const iv = crypto.randomBytes(16);
@@ -68,17 +69,29 @@ app.get('/api/v1/auth/:platform/url', async (req, res) => {
   if (platform === 'twitter') {
     const client = new TwitterApi({ clientId: process.env.TWITTER_CLIENT_ID || 'mock', clientSecret: process.env.TWITTER_CLIENT_SECRET || 'mock' });
     const { url, codeVerifier, state } = client.generateOAuth2AuthLink(
-      'http://localhost:3001/api/v1/auth/twitter/callback',
+      `${API_BASE_URL}/api/v1/auth/twitter/callback`,
       { scope: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'] }
     );
     oauthStates.set(state, { codeVerifier, state, userId: userId.toString(), teamId: teamId.toString() });
     res.json({ url });
-  } else if (platform === 'facebook' || platform === 'instagram') {
+  } else if (platform === 'facebook' || platform === 'instagram' || platform === 'threads') {
     const state = crypto.randomBytes(16).toString('hex');
-    const appId = process.env.FACEBOOK_APP_ID;
-    const redirectUri = encodeURIComponent(`http://localhost:3001/api/v1/auth/${platform}/callback`);
-    const scope = encodeURIComponent('pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts,publish_video');
-    const url = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}`;
+    const appId = platform === 'threads' ? process.env.THREADS_CLIENT_ID : process.env.FACEBOOK_APP_ID;
+    const redirectUri = encodeURIComponent(`${API_BASE_URL}/api/v1/auth/${platform}/callback`);
+    
+    let scopeStr = '';
+    if (platform === 'threads') {
+      scopeStr = encodeURIComponent('threads_basic,threads_content_publish');
+    } else {
+      scopeStr = encodeURIComponent('pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts,publish_video');
+    }
+    
+    let url = '';
+    if (platform === 'threads') {
+      url = `https://threads.net/oauth/authorize?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scopeStr}&response_type=code&state=${state}`;
+    } else {
+      url = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${state}&scope=${scopeStr}`;
+    }
     
     oauthStates.set(state, { codeVerifier: 'none', state, userId: userId.toString(), teamId: teamId.toString() });
     res.json({ url });
@@ -94,7 +107,7 @@ app.get('/api/v1/auth/:platform/url', async (req, res) => {
   } else if (platform === 'linkedin') {
     const state = crypto.randomBytes(16).toString('hex');
     const clientId = process.env.LINKEDIN_CLIENT_ID || 'mock';
-    const redirectUri = process.env.LINKEDIN_REDIRECT_URI || 'http://localhost:3001/api/v1/auth/linkedin/callback';
+    const redirectUri = process.env.LINKEDIN_REDIRECT_URI || `${API_BASE_URL}/api/v1/auth/linkedin/callback`;
     const scope = encodeURIComponent('openid profile email w_member_social');
     const url = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=${scope}`;
     
@@ -103,7 +116,7 @@ app.get('/api/v1/auth/:platform/url', async (req, res) => {
   } else if (platform === 'pinterest') {
     const state = crypto.randomBytes(16).toString('hex');
     const clientId = process.env.PINTEREST_CLIENT_ID || 'mock';
-    const redirectUri = process.env.PINTEREST_REDIRECT_URI || 'http://localhost:3001/api/v1/auth/pinterest/callback';
+    const redirectUri = process.env.PINTEREST_REDIRECT_URI || `${API_BASE_URL}/api/v1/auth/pinterest/callback`;
     const scope = encodeURIComponent('boards:read,boards:write,pins:read,pins:write,user_accounts:read');
     const url = `https://www.pinterest.com/oauth/?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&state=${state}`;
     
@@ -112,7 +125,7 @@ app.get('/api/v1/auth/:platform/url', async (req, res) => {
   } else if (platform === 'tiktok') {
     const state = crypto.randomBytes(16).toString('hex');
     oauthStates.set(state, { codeVerifier: 'mock', state, userId: userId.toString(), teamId: teamId.toString() });
-    res.json({ url: `http://localhost:3001/api/v1/auth/${platform}/callback?state=${state}&code=mock_code` });
+    res.json({ url: `${API_BASE_URL}/api/v1/auth/${platform}/callback?state=${state}&code=mock_code` });
   } else {
     res.status(400).json({ error: 'Unknown platform' });
   }
@@ -133,26 +146,50 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
       const { client: loggedClient, accessToken, refreshToken } = await client.loginWithOAuth2({
         code: code as string,
         codeVerifier: session.codeVerifier,
-        redirectUri: 'http://localhost:3001/api/v1/auth/twitter/callback',
+        redirectUri: `${API_BASE_URL}/api/v1/auth/twitter/callback`,
       });
       encryptedAccess = encrypt(accessToken);
       encryptedRefresh = refreshToken ? encrypt(refreshToken) : null;
-    } else if (platform === 'facebook' || platform === 'instagram') {
-      const appId = process.env.FACEBOOK_APP_ID;
-      const appSecret = process.env.FACEBOOK_APP_SECRET;
-      const redirectUri = `http://localhost:3001/api/v1/auth/${platform}/callback`;
+    } else if (platform === 'facebook' || platform === 'instagram' || platform === 'threads') {
+      const appId = platform === 'threads' ? process.env.THREADS_CLIENT_ID : process.env.FACEBOOK_APP_ID;
+      const appSecret = platform === 'threads' ? process.env.THREADS_CLIENT_SECRET : process.env.FACEBOOK_APP_SECRET;
+      const redirectUri = `${API_BASE_URL}/api/v1/auth/${platform}/callback`;
       
-      const tokenRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`);
-      const tokenData = await tokenRes.json();
-      
-      if (tokenData.error) throw new Error(tokenData.error.message);
-      
-      const longLivedRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tokenData.access_token}`);
-      const longLivedData = await longLivedRes.json();
-      
-      if (longLivedData.error) throw new Error(longLivedData.error.message);
-      
-      const finalToken = longLivedData.access_token || tokenData.access_token;
+      let finalToken = '';
+
+      if (platform === 'threads') {
+        const tokenRes = await fetch('https://graph.threads.net/oauth/access_token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: appId!,
+            client_secret: appSecret!,
+            grant_type: 'authorization_code',
+            redirect_uri: redirectUri,
+            code: code as string
+          }).toString()
+        });
+        const tokenData = await tokenRes.json();
+        if (tokenData.error) throw new Error(tokenData.error_message || tokenData.error.message || 'Failed Threads short-lived token');
+
+        const longLivedRes = await fetch(`https://graph.threads.net/access_token?grant_type=th_exchange_token&client_secret=${appSecret}&access_token=${tokenData.access_token}`);
+        const longLivedData = await longLivedRes.json();
+        if (longLivedData.error) throw new Error(longLivedData.error_message || longLivedData.error.message || 'Failed Threads long-lived token');
+        
+        finalToken = longLivedData.access_token || tokenData.access_token;
+      } else {
+        const tokenRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`);
+        const tokenData = await tokenRes.json();
+        
+        if (tokenData.error) throw new Error(tokenData.error.message);
+        
+        const longLivedRes = await fetch(`https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tokenData.access_token}`);
+        const longLivedData = await longLivedRes.json();
+        
+        if (longLivedData.error) throw new Error(longLivedData.error.message);
+        
+        finalToken = longLivedData.access_token || tokenData.access_token;
+      }
       
       encryptedAccess = encrypt(finalToken);
       encryptedRefresh = encrypt('none'); 
@@ -181,7 +218,7 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
     } else if (platform === 'pinterest') {
       const clientId = process.env.PINTEREST_CLIENT_ID;
       const clientSecret = process.env.PINTEREST_CLIENT_SECRET;
-      const redirectUri = process.env.PINTEREST_REDIRECT_URI || 'http://localhost:3001/api/v1/auth/pinterest/callback';
+      const redirectUri = process.env.PINTEREST_REDIRECT_URI || `${API_BASE_URL}/api/v1/auth/pinterest/callback`;
       
       const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
       

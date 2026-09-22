@@ -6,6 +6,17 @@ import { createClient } from '@supabase/supabase-js';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
+// Upstash drops idle connections (ECONNRESET). Without these guards an unhandled 'error' event crashed this service
+// and every later notification (success or failure) just piled up in the queue, unread by anyone.
+process.on('uncaughtException', (err: any) => {
+  if (err.code === 'ECONNRESET') return;
+  console.error('[NotificationService] Uncaught Exception:', err.message);
+});
+process.on('unhandledRejection', (err: any) => {
+  if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET') return;
+  console.error('[NotificationService] Unhandled Rejection:', err?.message || err);
+});
+
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 const redisConnection = getRedisConnection(process.env.REDIS_URL || 'redis://localhost:6379');
 
@@ -39,4 +50,9 @@ const worker = new Worker(NOTIFICATIONS_QUEUE_NAME, async (job: Job) => {
 
 worker.on('failed', (job, err) => {
   console.log(`[NotificationService] Job ${job?.id} failed with ${err.message}`);
+});
+
+worker.on('error', (err) => {
+  if ((err as any).code === 'ECONNRESET') return;
+  console.error('[NotificationService] Internal error:', err.message);
 });

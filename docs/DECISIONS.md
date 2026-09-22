@@ -1,0 +1,24 @@
+# Architectural Decisions (as found in the code) and what they imply
+
+Format: **Decision** — evidence — consequence / guidance.
+
+1. **Microservices in one monorepo, one file per service.** `services/*/src/index.ts`. Fast to scaffold (see `scaffold-*.mjs`), but no shared middleware; cross-cutting changes (auth!) must be applied per service. Prefer extracting shared code into `packages/shared` before adding features that need common logic.
+2. **Supabase as the only database, with a hybrid access model:** the browser reads directly (RLS), services write with the service-role key. RLS is therefore *half* the security story; any new read done from the browser must have correct RLS, any new write through a service must implement authorization itself.
+3. **Team-scoped tenancy added late (phase 5)**: `team_id` was bolted onto `social_accounts`, `posts`, `analytics` only. `schedules`, `publish_jobs`, `notifications`, platform tables remain user-scoped. New tables should be team-scoped; consider migrating the rest.
+4. **Per-platform media variants stored as a JSON map in `posts.media_url`.** Chosen instead of the `media_variants` table the design doc envisioned (the Pinterest adapter still references that table's shape). All adapters and the UI depend on this contract; changing it is a cross-cutting migration.
+5. **Adapter pattern for publishing** (`PlatformAdapter`), adapters throw on failure and the route maps errors to HTTP statuses; `rate limit reached` in an error message is the (stringly-typed) signal for HTTP 429 → delayed retry. Keep that string if you rely on the behaviour.
+6. **Scheduling = BullMQ delayed jobs; the platform APIs' own scheduling is never used.** One job per (post, platform), `jobId = publish_jobs.id`. This is what makes cancel/reschedule feasible later.
+7. **DB row per job mirrors queue state** (`publish_jobs`), enabling UI status, Realtime updates and error messages. The two can diverge (queue job lost vs. row).
+8. **Worker calls publishing-service over HTTP instead of importing adapters.** Isolates platform code and rate limiting, but adds a hardcoded network hop (`localhost:3003`) and a single-point synchronous dependency.
+9. **Rate limiting delegated to Upstash and platform endpoints:** 5 publishes/min/user (Upstash), Threads quota via the official endpoint (design doc mandated), Facebook Reels via a self-computed 30/24 h count.
+10. **Redis used three ways:** BullMQ (ioredis + `REDIS_URL`), Upstash REST (cache, limiter, counters), and ioredis fallback when Upstash is absent. Env-dependent behaviour: without Upstash there is no role cache and no rate limiting.
+11. **Tokens encrypted at the application level (AES-256-CBC)** and stored in `*_encrypted` columns; reads happen in services only. Never send tokens to the browser (the browser reads `social_accounts.*` including encrypted columns via RLS — the ciphertext is exposed to team members; they cannot decrypt without the key).
+12. **Meta long-lived tokens instead of refresh flows;** YouTube only gets true refresh. The refresh-token column holds the string `'none'` (encrypted) when absent.
+13. **Threads uses its own app credentials** (`THREADS_CLIENT_ID/SECRET`) and endpoints (`graph.threads.net`), deviating from the design doc's "reuse the Meta app if possible".
+14. **Threads analytics without a new table**: match by post text (comment in code: "we cannot add new tables for Threads") — an explicit shortcut from the previous session.
+15. **Cache the feed for 60 s in post-service** but the dashboard timeline bypasses it (reads Supabase directly). Only the calendar uses the cached endpoint.
+16. **Calendar semantics (from `imple/CALENDAR_INTEGRATION_DEVELOPMENT.md`):** one event per post (not per platform job), one shared time per post, only `scheduled` posts draggable (enforce in backend too), drafts do not appear on the grid, reschedule must move the real BullMQ timers atomically.
+17. **Step-gated development process (Antigravity "Operating Protocol"):** build one step → self-check → report → wait for explicit go-ahead; do not start later steps or App-Review-gated scopes without approval. Progress reports (`*_PROGRESS_REPORT.md`) exist to resume across sessions. The current owner has not indicated whether this protocol continues; ask.
+18. **OAuth callback through a public tunnel** (cloudflared) rather than a deployed backend; `API_BASE_URL` must match the redirect URI registered with each provider.
+19. **Frontend deployed separately (Vercel)**, with `lightningcss` added as a dependency and `package-lock.json` removed from git to get Linux native binaries on Vercel (commit history `736a6ec`, `ecc5808`). Lock files are now untracked again — installing new deps locally may change what Vercel installs.
+20. **Mock-first integrations** (TikTok, LinkedIn tokens, billing, email): intentionally stubbed to keep the flow demonstrable. They are not flagged in the UI.

@@ -522,7 +522,9 @@ class LinkedInAdapter implements PlatformAdapter {
 
 class TikTokAdapter implements PlatformAdapter {
   async publish(post: any, account: any, decryptedToken: string, contentType?: string, job?: any) {
-    console.log(`[TikTokAdapter] Published post ${post.id} via TikTok Content API using token ${decryptedToken.substring(0,5)}...`);
+    // TikTok publishing is not implemented (accounts are connected with mock tokens). Failing honestly lets the user see
+    // a failure notification and a Failed status instead of a false "successfully published".
+    throw new Error('TikTok publishing is not implemented yet.');
   }
 }
 
@@ -649,6 +651,88 @@ class PinterestAdapter implements PlatformAdapter {
   }
 }
 
+class ThreadsAdapter implements PlatformAdapter {
+  async publish(post: any, account: any, decryptedToken: string, contentType?: string, job?: any) {
+    console.log(`[ThreadsAdapter] Publishing post ${post.id}`);
+    
+    // Check text byte length
+    const textBytes = Buffer.byteLength(post.content || '', 'utf8');
+    if (textBytes > 500) {
+      throw new Error("Threads text exceeds 500 UTF-8 bytes limit.");
+    }
+    
+    // Check rate limit
+    const limitRes = await fetch(`https://graph.threads.net/v1.0/me/threads_publishing_limit?fields=quota_usage,quota_total&access_token=${decryptedToken}`);
+    const limitData = await limitRes.json();
+    if (limitData.data && limitData.data.length > 0) {
+      const quota = limitData.data[0];
+      if (quota.quota_usage >= quota.quota_total) {
+        throw new Error('Threads rate limit reached (250/24h). Delaying job.');
+      }
+    }
+
+    let mediaUrl = null;
+    try {
+      const media = JSON.parse(post.media_url || '{}');
+      mediaUrl = media.threads || null;
+    } catch (e) {}
+
+    const body: any = { text: post.content, access_token: decryptedToken };
+    
+    if (mediaUrl) {
+      const isVideo = contentType === 'reel' || mediaUrl.match(/\.(mp4|mov|avi|mkv)(\?.*)?$/i);
+      if (isVideo) {
+        body.media_type = 'VIDEO';
+        body.video_url = mediaUrl;
+      } else {
+        body.media_type = 'IMAGE';
+        body.image_url = mediaUrl;
+      }
+    } else {
+      body.media_type = 'TEXT';
+    }
+
+    // 1. Create Container
+    const containerRes = await fetch(`https://graph.threads.net/v1.0/me/threads`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const containerData = await containerRes.json();
+    if (containerData.error) throw new Error(containerData.error.message);
+
+    // 2. Poll for status if media
+    if (body.media_type !== 'TEXT') {
+      let isReady = false;
+      for (let i = 0; i < 24; i++) { // Poll up to 2 mins
+        await new Promise(r => setTimeout(r, 5000));
+        const statusRes = await fetch(`https://graph.threads.net/v1.0/${containerData.id}?fields=status,error_message&access_token=${decryptedToken}`);
+        const statusData = await statusRes.json();
+        if (statusData.status === 'FINISHED') {
+          isReady = true;
+          break;
+        } else if (statusData.status === 'ERROR') {
+          throw new Error(`Threads media container processing failed: ${statusData.error_message || 'Unknown error'}`);
+        }
+      }
+      if (!isReady) {
+        throw new Error('Threads media container timed out waiting for processing.');
+      }
+    }
+
+    // 3. Publish
+    const publishRes = await fetch(`https://graph.threads.net/v1.0/me/threads_publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ creation_id: containerData.id, access_token: decryptedToken })
+    });
+    const publishData = await publishRes.json();
+    if (publishData.error) throw new Error(publishData.error.message);
+    
+    console.log(`[ThreadsAdapter] Successfully published post ${post.id}`);
+  }
+}
+
 const adapters: Record<string, PlatformAdapter> = {
   twitter: new TwitterAdapter(),
   facebook: new FacebookAdapter(),
@@ -657,6 +741,7 @@ const adapters: Record<string, PlatformAdapter> = {
   linkedin: new LinkedInAdapter(),
   tiktok: new TikTokAdapter(),
   pinterest: new PinterestAdapter(),
+  threads: new ThreadsAdapter(),
 };
 
 app.post('/api/v1/publish/:jobId', async (req, res) => {

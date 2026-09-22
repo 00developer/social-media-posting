@@ -1,11 +1,57 @@
 'use client';
 
 import { useState } from 'react';
-import { useDashboard } from '@/components/DashboardProvider';
+import { useDashboard, type Team } from '@/components/DashboardProvider';
+import { supabase } from '@/lib/supabase';
+
+// Keyed by activeTeam.id from the parent (see render below) so switching teams remounts this
+// with a fresh default instead of needing an effect to resync local state from a prop.
+function TeamNameEditor({ team, userId, fetchUserTeams }: { team: Team; userId: string; fetchUserTeams: (userId: string) => Promise<void> }) {
+  const [teamNameInput, setTeamNameInput] = useState(team.name || '');
+  const [savingName, setSavingName] = useState(false);
+
+  const handleRenameTeam = async () => {
+    const newName = teamNameInput.trim();
+    if (!newName || newName === team.name) return;
+    setSavingName(true);
+    try {
+      // RLS ("Team owners can update their teams") enforces owner-only server-side too.
+      const { error } = await supabase.from('teams').update({ name: newName }).eq('id', team.id);
+      if (error) {
+        alert(error.message);
+      } else {
+        await fetchUserTeams(userId);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error renaming team');
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  return (
+    <div className="flex gap-2">
+      <input
+        type="text"
+        value={teamNameInput}
+        onChange={e => setTeamNameInput(e.target.value)}
+        className="border p-2 text-sm rounded flex-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+      />
+      <button
+        onClick={handleRenameTeam}
+        disabled={savingName || !teamNameInput.trim() || teamNameInput.trim() === team.name}
+        className="bg-indigo-600 text-white px-4 py-2 text-sm rounded font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+      >
+        {savingName ? 'Saving...' : 'Save'}
+      </button>
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const { user, activeTeam, fetchUserTeams } = useDashboard();
-  
+
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
 
@@ -61,7 +107,18 @@ export default function SettingsPage() {
             {activeTeam?.plan} PLAN
           </span>
         </div>
-        
+
+        <div className="mb-8">
+          <h3 className="text-sm font-semibold mb-3">Team Name</h3>
+          {activeTeam?.role === 'owner' && user ? (
+            <TeamNameEditor key={activeTeam.id} team={activeTeam} userId={user.id} fetchUserTeams={fetchUserTeams} />
+          ) : (
+            <p className="text-sm text-gray-500">Only the team owner can rename this team.</p>
+          )}
+        </div>
+
+        <hr className="my-6 border-gray-100" />
+
         {['owner', 'admin'].includes(activeTeam?.role as string) ? (
           <div className="mb-8">
             <h3 className="text-sm font-semibold mb-3">Invite Member</h3>
@@ -99,7 +156,7 @@ export default function SettingsPage() {
         {activeTeam?.role === 'owner' ? (
           <div>
             <h3 className="text-sm font-semibold mb-3">Billing</h3>
-            <p className="text-sm text-gray-600 mb-4">Manage your team's subscription plan. (Mock Implementation)</p>
+            <p className="text-sm text-gray-600 mb-4">Manage your team&apos;s subscription plan. (Mock Implementation)</p>
             {activeTeam?.plan === 'free' ? (
               <button 
                 onClick={() => handleBilling('pro')} 

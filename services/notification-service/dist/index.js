@@ -9,6 +9,18 @@ const bullmq_1 = require("bullmq");
 const shared_1 = require("@socialpush/shared");
 const supabase_js_1 = require("@supabase/supabase-js");
 dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../../.env') });
+// Upstash drops idle connections (ECONNRESET). Without these guards an unhandled 'error' event crashed this service
+// and every later notification (success or failure) just piled up in the queue, unread by anyone.
+process.on('uncaughtException', (err) => {
+    if (err.code === 'ECONNRESET')
+        return;
+    console.error('[NotificationService] Uncaught Exception:', err.message);
+});
+process.on('unhandledRejection', (err) => {
+    if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET')
+        return;
+    console.error('[NotificationService] Unhandled Rejection:', err?.message || err);
+});
 const supabase = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const redisConnection = (0, shared_1.getRedisConnection)(process.env.REDIS_URL || 'redis://localhost:6379');
 console.log('Notification Service started. Listening to queue:', shared_1.NOTIFICATIONS_QUEUE_NAME);
@@ -36,4 +48,9 @@ const worker = new bullmq_1.Worker(shared_1.NOTIFICATIONS_QUEUE_NAME, async (job
 }, { connection: redisConnection });
 worker.on('failed', (job, err) => {
     console.log(`[NotificationService] Job ${job?.id} failed with ${err.message}`);
+});
+worker.on('error', (err) => {
+    if (err.code === 'ECONNRESET')
+        return;
+    console.error('[NotificationService] Internal error:', err.message);
 });

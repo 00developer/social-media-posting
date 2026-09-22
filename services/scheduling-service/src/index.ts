@@ -14,6 +14,14 @@ const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SE
 const redisConnection = getRedisConnection(process.env.REDIS_URL || 'redis://localhost:6379');
 const publishQueue = getQueue(redisConnection);
 
+// Options every publish job is queued with. Retries are NOT BullMQ attempts: the worker retries transient failures itself
+// (3 attempts, backoff 1 min then 2 min, see services/worker/src/failureRules.ts) and fails permanent errors at once.
+// Finished jobs are pruned so Redis does not fill up - the outcome lives in publish_jobs.
+const PUBLISH_JOB_OPTIONS = {
+  removeOnComplete: { age: 3 * 24 * 3600, count: 500 },
+  removeOnFail: { age: 14 * 24 * 3600, count: 500 },
+};
+
 app.post('/api/v1/schedules', async (req, res) => {
   const { userId, postId, platforms, scheduledAt, timezone, contentType } = req.body;
   
@@ -64,7 +72,7 @@ app.post('/api/v1/schedules', async (req, res) => {
         postId,
         userId,
         platform
-      }, { delay, jobId: jobRecord.id });
+      }, { ...PUBLISH_JOB_OPTIONS, delay, jobId: jobRecord.id });
     }
 
     // Update post status to scheduled
@@ -73,6 +81,80 @@ app.post('/api/v1/schedules', async (req, res) => {
     res.json({ success: true, message: `Post scheduled for ${platforms.length} platforms` });
   } catch (err: any) {
     console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// A retry adds new publish_jobs rows and leaves the old ones behind, so only the newest job per platform counts.
+function latestJobsPerPlatform<T extends { platform?: string | null; created_at?: string | null }>(jobs: T[]): T[] {
+  const time = (iso?: string | null) => { const t = iso ? Date.parse(iso) : NaN; return Number.isNaN(t) ? 0 : t; };
+  const latest = new Map<string, T>();
+  for (const job of jobs) {
+    const key = job.platform ?? '__unknown__';
+    const current = latest.get(key);
+    if (!current || time(job.created_at) >= time(current.created_at)) latest.set(key, job);
+  }
+  return [...latest.values()];
+}
+
+// Retry the platforms of a post whose latest job failed. Only those platforms: platforms that already
+// published are never touched (no duplicate posts). Each retry is a NEW publish_jobs row (same content_type)
+// queued with a new BullMQ id; the old failed rows stay as history.
+app.post('/api/v1/posts/:postId/retry', async (req, res) => {
+  const { postId } = req.params;
+  const { userId, platforms } = req.body ?? {};
+
+  if (!UUID_RE.test(postId) || typeof userId !== 'string' || !UUID_RE.test(userId)) {
+    return res.status(400).json({ error: 'Missing or invalid id' });
+  }
+  if (platforms !== undefined && (!Array.isArray(platforms) || platforms.some((p: unknown) => typeof p !== 'string'))) {
+    return res.status(400).json({ error: 'platforms must be an array of strings' });
+  }
+
+  const { data: post, error: postError } = await supabase.from('posts').select('id, team_id').eq('id', postId).maybeSingle();
+  if (postError) return res.status(500).json({ error: postError.message });
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+
+  const { data: member } = await supabase.from('team_members').select('role').eq('team_id', post.team_id).eq('user_id', userId).maybeSingle();
+  if (!member) return res.status(403).json({ error: 'Unauthorized' });
+  if (member.role === 'viewer') return res.status(403).json({ error: 'Unauthorized: Viewers cannot retry posts' });
+
+  const { data: jobs, error: jobsError } = await supabase.from('publish_jobs').select('*').eq('post_id', postId);
+  if (jobsError) return res.status(500).json({ error: jobsError.message });
+
+  let failed = latestJobsPerPlatform(jobs ?? []).filter((j) => j.status === 'failed');
+  if (Array.isArray(platforms) && platforms.length > 0) failed = failed.filter((j) => platforms.includes(j.platform));
+  if (failed.length === 0) {
+    return res.status(409).json({ error: 'Nothing to retry: this post has no failed platforms.', code: 'NOTHING_TO_RETRY' });
+  }
+
+  const created: Array<{ id: string; platform: string }> = [];
+  try {
+    for (const old of failed) {
+      const { data: row, error } = await supabase.from('publish_jobs').insert({
+        post_id: postId,
+        user_id: userId,
+        platform: old.platform,
+        status: 'scheduled',
+        content_type: old.content_type || 'post'
+      }).select().single();
+      if (error) throw error;
+      created.push({ id: row.id, platform: row.platform });
+
+      await publishQueue.add('publish-post', { jobId: row.id, postId, userId, platform: row.platform }, { ...PUBLISH_JOB_OPTIONS, jobId: row.id });
+    }
+
+    await supabase.from('posts').update({ status: 'scheduled', updated_at: new Date().toISOString() }).eq('id', postId);
+    res.json({ success: true, retried: created.map((j) => j.platform), jobs: created.map((j) => j.id) });
+  } catch (err: any) {
+    console.error(err);
+    // Roll back what this request created so no half-retried state is left behind
+    for (const row of created) {
+      try { const queued = await publishQueue.getJob(row.id); await queued?.remove(); } catch { /* already running: it will fail harmlessly once its row is gone */ }
+    }
+    if (created.length > 0) await supabase.from('publish_jobs').delete().in('id', created.map((j) => j.id));
     res.status(500).json({ error: err.message });
   }
 });

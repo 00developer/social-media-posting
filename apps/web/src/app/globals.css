@@ -24,3 +24,31 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Calendar: every event opens its details / edit modal on click, for all roles. */
+.calendar-events-clickable .fc-event {
+  cursor: pointer;
+}
+
+/* Calendar (month view): "+" shows on hover over days a post can be created on.
+   `.calendar-creatable` is only set for roles that may create posts; past days are excluded.
+   The "+" ignores pointer events so the click reaches the cell and FullCalendar's dateClick fires. */
+.calendar-creatable .fc-daygrid-day:not(.fc-day-past) {
+  cursor: pointer;
+}
+.calendar-creatable .fc-daygrid-day:not(.fc-day-past):hover .fc-daygrid-day-frame::after {
+  content: '+';
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  width: 22px;
+  height: 22px;
+  line-height: 21px;
+  text-align: center;
+  border-radius: 9999px;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  pointer-events: none;
+}

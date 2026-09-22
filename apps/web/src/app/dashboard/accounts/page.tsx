@@ -124,7 +124,7 @@ export default function AccountsPage() {
         <div className="border-t border-gray-100 pt-8">
           <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Connect New Platform</h3>
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-            {['twitter', 'facebook', 'instagram', 'youtube', 'linkedin', 'tiktok', 'pinterest'].map(platform => {
+            {['twitter', 'facebook', 'instagram', 'youtube', 'linkedin', 'tiktok', 'pinterest', 'threads'].map(platform => {
               const isConnected = accounts.some(a => a.platform === platform);
               return (
                 <button 

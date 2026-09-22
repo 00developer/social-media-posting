@@ -2,7 +2,7 @@
 
 SocialPush is a multi-platform social media scheduling and publishing tool ("write once, publish everywhere"). A user (or team) connects social accounts via OAuth, composes a post with an optional image/video, picks target platforms, and either publishes immediately or schedules it for later. A background worker publishes through per-platform adapters and notifies the user of the result; analytics are pulled back periodically.
 
-This README describes the **actual current state** of the project (verified by reading the code and, in several places, by testing against the real database), not an aspirational feature list. For the full, more detailed picture see [`docs/`](docs/) — start with [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md), [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) and [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md).
+This README describes the **actual current state** of the project (verified by reading the code and, in several places, by testing against the real database), not an aspirational feature list.
 
 ## ⚠️ Before you deploy this or share a live link
 

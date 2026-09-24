@@ -403,6 +403,9 @@ class YouTubeAdapter implements PlatformAdapter {
   }
 }
 
+// LinkedIn versions the REST API by YYYYMM and retires each after ~1 year; override via env if it goes stale.
+const LINKEDIN_API_VERSION = process.env.LINKEDIN_API_VERSION || '202606';
+
 class LinkedInAdapter implements PlatformAdapter {
   async publish(post: any, account: any, decryptedToken: string, contentType?: string, job?: any) {
     console.log(`[LinkedInAdapter] Publishing post ${post.id} via LinkedIn REST API...`);
@@ -439,13 +442,13 @@ class LinkedInAdapter implements PlatformAdapter {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${decryptedToken}`,
-          'Linkedin-Version': '202401',
+          'Linkedin-Version': LINKEDIN_API_VERSION,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          initializeUploadRequest: {
-             owner: authorUrn
-          }
+          initializeUploadRequest: isVideo
+            ? { owner: authorUrn, fileSizeBytes: mediaBuffer.byteLength, uploadCaptions: false, uploadThumbnail: false }
+            : { owner: authorUrn }
         })
       });
       
@@ -454,28 +457,51 @@ class LinkedInAdapter implements PlatformAdapter {
          throw new Error(`LinkedIn Media Init Error: ${JSON.stringify(initData)}`);
       }
       
-      let uploadUrl;
       if (isVideo) {
-         uploadUrl = initData.value.uploadInstructions[0].uploadUrl;
+         // Videos are uploaded in the byte ranges LinkedIn hands back (one PUT per range), then finalized.
          mediaUrn = initData.value.video;
+         const uploadedPartIds: string[] = [];
+         for (const part of initData.value.uploadInstructions) {
+            const partRes = await fetch(part.uploadUrl, {
+               method: 'PUT',
+               headers: { 'Content-Type': 'application/octet-stream' },
+               body: Buffer.from(mediaBuffer.slice(part.firstByte, part.lastByte + 1))
+            });
+            if (!partRes.ok) {
+               const errText = await partRes.text();
+               throw new Error(`LinkedIn Media Upload Error: ${errText}`);
+            }
+            uploadedPartIds.push(partRes.headers.get('etag') || '');
+         }
+         const finalizeRes = await fetch('https://api.linkedin.com/rest/videos?action=finalizeUpload', {
+            method: 'POST',
+            headers: {
+               'Authorization': `Bearer ${decryptedToken}`,
+               'Linkedin-Version': LINKEDIN_API_VERSION,
+               'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+               finalizeUploadRequest: { video: mediaUrn, uploadToken: initData.value.uploadToken || '', uploadedPartIds }
+            })
+         });
+         if (!finalizeRes.ok) {
+            const errText = await finalizeRes.text();
+            throw new Error(`LinkedIn Media Finalize Error: ${errText}`);
+         }
       } else {
-         uploadUrl = initData.value.uploadUrl;
          mediaUrn = initData.value.image;
-      }
-      
-      // Upload Binary
-      const uploadRes = await fetch(uploadUrl, {
-         method: 'PUT',
-         headers: {
-            'Authorization': `Bearer ${decryptedToken}`, // Safe to include
-            'Content-Type': 'application/octet-stream'
-         },
-         body: Buffer.from(mediaBuffer)
-      });
-      
-      if (!uploadRes.ok) {
-         const errText = await uploadRes.text();
-         throw new Error(`LinkedIn Media Upload Error: ${errText}`);
+         const uploadRes = await fetch(initData.value.uploadUrl, {
+            method: 'PUT',
+            headers: {
+               'Authorization': `Bearer ${decryptedToken}`,
+               'Content-Type': 'application/octet-stream'
+            },
+            body: Buffer.from(mediaBuffer)
+         });
+         if (!uploadRes.ok) {
+            const errText = await uploadRes.text();
+            throw new Error(`LinkedIn Media Upload Error: ${errText}`);
+         }
       }
     }
 
@@ -506,7 +532,7 @@ class LinkedInAdapter implements PlatformAdapter {
       method: 'POST',
       headers: {
          'Authorization': `Bearer ${decryptedToken}`,
-         'Linkedin-Version': '202401',
+         'Linkedin-Version': LINKEDIN_API_VERSION,
          'Content-Type': 'application/json',
          'X-Restli-Protocol-Version': '2.0.0'
       },
@@ -530,8 +556,26 @@ class TikTokAdapter implements PlatformAdapter {
   }
 }
 
+// Trial-access Pinterest apps can only call the sandbox host; set PINTEREST_API_BASE=https://api-sandbox.pinterest.com to test there.
+const PINTEREST_API_BASE = process.env.PINTEREST_API_BASE || 'https://api.pinterest.com';
+
+// Trial-access apps get 401 in the sandbox with a normal OAuth token; the sandbox needs the token generated in the Pinterest developer portal.
+const pinterestToken = (oauthToken: string) =>
+  PINTEREST_API_BASE.includes('sandbox') && process.env.PINTEREST_SANDBOX_TOKEN ? process.env.PINTEREST_SANDBOX_TOKEN : oauthToken;
+
+// post.media_url is a JSON map of platform -> URL (see ARCHITECTURE.md); fall back to a plain URL string.
+function pinterestMediaUrl(post: any): string | null {
+  try {
+    const media = JSON.parse(post.media_url || '{}');
+    return media.pinterest || null;
+  } catch (e) {
+    return post.media_url || null;
+  }
+}
+
 class PinterestAdapter implements PlatformAdapter {
   async publish(post: any, account: any, decryptedToken: string, contentType?: string, job?: any) {
+    const token = pinterestToken(decryptedToken);
     console.log(`[PinterestAdapter] Publishing post ${post.id} via Pinterest API...`);
     
     let boardId = job?.pinterest_board_id;
@@ -552,10 +596,10 @@ class PinterestAdapter implements PlatformAdapter {
     const description = post.content || '';
 
     if (contentType === 'reel') {
-      const registerRes = await fetch('https://api.pinterest.com/v5/media', {
+      const registerRes = await fetch(`${PINTEREST_API_BASE}/v5/media`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${decryptedToken}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ media_type: 'video' })
@@ -565,7 +609,7 @@ class PinterestAdapter implements PlatformAdapter {
 
       const { media_id, upload_url, upload_parameters } = registerData;
 
-      const videoUrl = post.media_variants?.pinterest || post.media_url;
+      const videoUrl = pinterestMediaUrl(post);
       if (!videoUrl) throw new Error('No video URL provided for Pinterest Reel');
 
       const videoRes = await fetch(videoUrl);
@@ -588,10 +632,10 @@ class PinterestAdapter implements PlatformAdapter {
 
       await new Promise(r => setTimeout(r, 5000));
 
-      const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
+      const pinRes = await fetch(`${PINTEREST_API_BASE}/v5/pins`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${decryptedToken}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -600,7 +644,7 @@ class PinterestAdapter implements PlatformAdapter {
           description: description,
           media_source: {
             source_type: 'video_id',
-            cover_image_url: 'https://via.placeholder.com/1000x1500.jpg',
+            cover_image_key_frame_time: 0,
             media_id: media_id
           }
         })
@@ -610,21 +654,21 @@ class PinterestAdapter implements PlatformAdapter {
 
       // Store the pin_id for analytics
       if (pinData.id) {
-        await supabase.from('pinterest_published_pins').insert({
+        await supabase.from('pinterest_published_pins').upsert({
           post_id: post.id,
           pin_id: pinData.id,
           user_id: post.user_id
-        });
+        }, { onConflict: 'post_id' });
       }
 
     } else {
-      const imageUrl = post.media_variants?.pinterest || post.media_url;
+      const imageUrl = pinterestMediaUrl(post);
       if (!imageUrl) throw new Error('No image URL provided for Pinterest Pin');
 
-      const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
+      const pinRes = await fetch(`${PINTEREST_API_BASE}/v5/pins`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${decryptedToken}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -642,11 +686,11 @@ class PinterestAdapter implements PlatformAdapter {
 
       // Store the pin_id for analytics
       if (pinData.id) {
-        await supabase.from('pinterest_published_pins').insert({
+        await supabase.from('pinterest_published_pins').upsert({
           post_id: post.id,
           pin_id: pinData.id,
           user_id: post.user_id
-        });
+        }, { onConflict: 'post_id' });
       }
     }
     console.log(`[PinterestAdapter] Successfully published post ${post.id} to Pinterest (Board: ${boardId})`);

@@ -10,6 +10,12 @@ dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
 import { getCachedTeamRole, setCachedTeamRole } from '@socialpush/shared';
 
+const PINTEREST_API_BASE = process.env.PINTEREST_API_BASE || 'https://api.pinterest.com';
+
+// Trial-access apps get 401 in the sandbox with a normal OAuth token; the sandbox needs the token generated in the Pinterest developer portal.
+const pinterestToken = (oauthToken: string) =>
+  PINTEREST_API_BASE.includes('sandbox') && process.env.PINTEREST_SANDBOX_TOKEN ? process.env.PINTEREST_SANDBOX_TOKEN : oauthToken;
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -222,7 +228,7 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
       
       const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
       
-      const tokenRes = await fetch('https://api.pinterest.com/v5/oauth/token', {
+      const tokenRes = await fetch(`https://api.pinterest.com/v5/oauth/token`, {
         method: 'POST',
         headers: {
           'Authorization': `Basic ${basicAuth}`,
@@ -240,7 +246,7 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
       const encAccess = encrypt(tokenData.access_token);
       const encRefresh = tokenData.refresh_token ? encrypt(tokenData.refresh_token) : null;
       
-      const userRes = await fetch('https://api.pinterest.com/v5/user_account', {
+      const userRes = await fetch(`https://api.pinterest.com/v5/user_account`, {
         headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
       });
       const userData = await userRes.json();
@@ -260,23 +266,26 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
 
       if (saError) throw saError;
 
-      const boardsRes = await fetch('https://api.pinterest.com/v5/boards', {
-        headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
+      const boardToken = pinterestToken(tokenData.access_token);
+      const boardsRes = await fetch(`${PINTEREST_API_BASE}/v5/boards`, {
+        headers: { 'Authorization': `Bearer ${boardToken}` }
       });
       const boardsData = await boardsRes.json();
+      if (!boardsRes.ok) console.error('Pinterest board import failed:', boardsRes.status, boardsData.message);
       let boards = boardsData.items || [];
       
       if (boards.length === 0) {
-        const createBoardRes = await fetch('https://api.pinterest.com/v5/boards', {
+        const createBoardRes = await fetch(`${PINTEREST_API_BASE}/v5/boards`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${tokenData.access_token}`,
+            'Authorization': `Bearer ${boardToken}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ name: 'SocialPush' })
         });
         const newBoard = await createBoardRes.json();
         if (createBoardRes.ok) boards = [newBoard];
+        else console.error('Pinterest default board create failed:', createBoardRes.status, newBoard.message);
       }
 
       for (const [index, board] of boards.entries()) {
@@ -291,8 +300,56 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
       
       oauthStates.delete(state as string);
       return res.send('<script>window.close();</script>Account connected successfully!');
+    } else if (platform === 'linkedin') {
+      const redirectUri = process.env.LINKEDIN_REDIRECT_URI || `${API_BASE_URL}/api/v1/auth/linkedin/callback`;
+
+      const tokenRes = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: code as string,
+          client_id: process.env.LINKEDIN_CLIENT_ID!,
+          client_secret: process.env.LINKEDIN_CLIENT_SECRET!,
+          redirect_uri: redirectUri,
+        }).toString()
+      });
+      const tokenData = await tokenRes.json();
+      if (!tokenRes.ok || !tokenData.access_token) {
+        throw new Error(tokenData.error_description || tokenData.error || 'Failed to get LinkedIn token');
+      }
+
+      const userRes = await fetch('https://api.linkedin.com/v2/userinfo', {
+        headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
+      });
+      const userData = await userRes.json();
+      if (!userRes.ok || !userData.sub) throw new Error('Failed to fetch LinkedIn profile');
+
+      const fields = {
+        user_id: session.userId,
+        team_id: session.teamId,
+        platform: 'linkedin',
+        provider_account_id: userData.sub,
+        handle: userData.name || userData.email || userData.sub,
+        target_type: 'member',
+        access_token_encrypted: encrypt(tokenData.access_token),
+        refresh_token_encrypted: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : null,
+        // LinkedIn access tokens last ~60 days; no refresh token is issued to standard apps.
+        refresh_token_expires_at: new Date(Date.now() + (tokenData.expires_in || 60 * 24 * 60 * 60) * 1000).toISOString(),
+      };
+
+      // Reconnecting the same LinkedIn member replaces the token instead of adding a duplicate row.
+      const { data: existing } = await supabase.from('social_accounts').select('id')
+        .eq('team_id', session.teamId).eq('platform', 'linkedin').eq('provider_account_id', userData.sub).maybeSingle();
+      const { error: saError } = existing
+        ? await supabase.from('social_accounts').update(fields).eq('id', existing.id)
+        : await supabase.from('social_accounts').insert(fields);
+      if (saError) throw saError;
+
+      oauthStates.delete(state as string);
+      return res.send('<script>window.close();</script>Account connected successfully!');
     } else {
-      // Mock tokens for LinkedIn etc
+      // Mock tokens for TikTok etc
       encryptedAccess = encrypt(`mock_${platform}_access_token`);
       encryptedRefresh = encrypt(`mock_${platform}_refresh_token`);
     }

@@ -9,6 +9,12 @@ import { createClient } from '@supabase/supabase-js';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
+const PINTEREST_API_BASE = process.env.PINTEREST_API_BASE || 'https://api.pinterest.com';
+
+// Trial-access apps get 401 in the sandbox with a normal OAuth token; the sandbox needs the token generated in the Pinterest developer portal.
+const pinterestToken = (oauthToken: string) =>
+  PINTEREST_API_BASE.includes('sandbox') && process.env.PINTEREST_SANDBOX_TOKEN ? process.env.PINTEREST_SANDBOX_TOKEN : oauthToken;
+
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
   auth: {
     autoRefreshToken: false,
@@ -285,10 +291,11 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
           // Start date needs to be at least the creation date, but if it was created today, start and end are the same
           const pinStartDateStr = pin.created_at.split('T')[0];
           
-          const url = `https://api.pinterest.com/v5/pins/${pin.pin_id}/analytics?start_date=${pinStartDateStr}&end_date=${endDate}&metric_types=IMPRESSION,OUTBOUND_CLICK,SAVE`;
+          const pinToken = pinterestToken(activeToken);
+          const url = `${PINTEREST_API_BASE}/v5/pins/${pin.pin_id}/analytics?start_date=${pinStartDateStr}&end_date=${endDate}&metric_types=IMPRESSION,OUTBOUND_CLICK,SAVE`;
 
           const pinRes = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${activeToken}` }
+            headers: { 'Authorization': `Bearer ${pinToken}` }
           });
 
           if (pinRes.ok) {

@@ -41,6 +41,21 @@ class TwitterAdapter implements PlatformAdapter {
   }
 }
 
+// Remember the platform-side id of what we published so the analytics service can look up its stats later.
+// Best-effort: analytics must never make a successful publish fail (and the table may not exist yet).
+async function recordPublishedPost(post: any, platform: string, externalId: string | null | undefined, kind = 'post') {
+  if (!externalId) return;
+  try {
+    const { error } = await supabase.from('published_posts').upsert(
+      { post_id: post.id, platform, external_id: String(externalId), external_kind: kind, user_id: post.user_id, team_id: post.team_id ?? null },
+      { onConflict: 'post_id,platform' }
+    );
+    if (error) console.warn(`[published_posts] could not record the ${platform} id for post ${post.id}: ${error.message}`);
+  } catch (e) {
+    console.warn(`[published_posts] could not record the ${platform} id for post ${post.id}:`, e instanceof Error ? e.message : e);
+  }
+}
+
 async function getFacebookPages(decryptedToken: string) {
   let pagesRes = await fetch(`https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token,instagram_business_account&access_token=${decryptedToken}`);
   let pagesData = await pagesRes.json();
@@ -133,6 +148,8 @@ class FacebookAdapter implements PlatformAdapter {
     
     const data = await res.json();
     if (data.error) throw new Error(data.error.message);
+    // Photo posts return { id: <photo id>, post_id: <feed post id> }; text posts return { id: <post id> }.
+    await recordPublishedPost(post, 'facebook', data.post_id || data.id, 'post');
     console.log(`[FacebookAdapter] Successfully published to Facebook page ${pageId}`);
   }
 
@@ -180,6 +197,7 @@ class FacebookAdapter implements PlatformAdapter {
     if (finishData.error) throw new Error(`Facebook Finish Phase Error: ${finishData.error.message}`);
     
     if (finishData.success) {
+      await recordPublishedPost(post, 'facebook', videoId, 'video');
       console.log(`[FacebookAdapter] Successfully published Reel to Facebook page ${pageId}`);
     } else {
       throw new Error(`Facebook Finish Phase Error: ${JSON.stringify(finishData)}`);
@@ -254,9 +272,14 @@ class InstagramAdapter implements PlatformAdapter {
     const publishData = await publishRes.json();
     if (publishData.error) throw new Error(publishData.error.message);
     
+    await recordPublishedPost(post, 'instagram', publishData.id, contentType === 'reel' ? 'reel' : 'post');
     console.log(`[InstagramAdapter] Successfully published to IG account ${igAccountId}`);
   }
 }
+
+// Uploads are public by default. Override with YOUTUBE_PRIVACY=unlisted|private (e.g. for testing).
+// Note: Google can force uploads from an unaudited API project to private regardless of this setting.
+const YOUTUBE_PRIVACY = ["public", "unlisted", "private"].includes(process.env.YOUTUBE_PRIVACY || "") ? process.env.YOUTUBE_PRIVACY! : "public";
 
 class YouTubeAdapter implements PlatformAdapter {
   async publish(post: any, account: any, decryptedToken: string, contentType?: string, job?: any) {
@@ -312,7 +335,7 @@ class YouTubeAdapter implements PlatformAdapter {
             title: post.content.substring(0, 100) || 'SocialPush Video',
             description: contentType === 'reel' ? `${post.content}\n#Shorts` : post.content
           },
-          status: { privacyStatus: 'unlisted' }
+          status: { privacyStatus: YOUTUBE_PRIVACY }
         })
       });
       
@@ -544,6 +567,8 @@ class LinkedInAdapter implements PlatformAdapter {
        throw new Error(`LinkedIn Post Error: ${errText}`);
     }
     
+    // LinkedIn returns the new post's URN in the x-restli-id header.
+    await recordPublishedPost(post, 'linkedin', postRes.headers.get('x-restli-id'), 'post');
     console.log(`[LinkedInAdapter] Successfully published post ${post.id} to LinkedIn`);
   }
 }
@@ -775,6 +800,7 @@ class ThreadsAdapter implements PlatformAdapter {
     const publishData = await publishRes.json();
     if (publishData.error) throw new Error(publishData.error.message);
     
+    await recordPublishedPost(post, 'threads', publishData.id, contentType === 'reel' ? 'reel' : 'post');
     console.log(`[ThreadsAdapter] Successfully published post ${post.id}`);
   }
 }

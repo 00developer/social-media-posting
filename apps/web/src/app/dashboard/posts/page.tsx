@@ -10,7 +10,7 @@ import { getFailedPlatforms, getFailureLines, getRetryNotes, isPostFailed, retry
 import { POST_SERVICE_URL, SCHEDULING_SERVICE_URL } from '@/lib/apiUrls';
 
 export default function PostsPage() {
-  const { user, activeTeam, posts, analytics, fetchTeamData } = useDashboard();
+  const { user, activeTeam, posts, fetchTeamData } = useDashboard();
   console.log('DEBUG POSTS:', posts);
   
   const [isPublishing, setIsPublishing] = useState(false);
@@ -208,35 +208,6 @@ export default function PostsPage() {
                          );
                        })}
                      </div>
-                  )}
-                  
-                  {post.status === 'scheduled' && analytics.filter(a => a.post_id === post.id).length > 0 && (
-                    <div className="mt-6 pt-5 border-t border-gray-100">
-                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Analytics</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {analytics.filter(a => a.post_id === post.id).map(stat => (
-                          <div key={stat.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className="text-sm font-bold text-gray-700 capitalize">{stat.platform}</span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2">
-                              <div>
-                                <span className="block text-xl font-bold text-gray-900">{stat.views && stat.views > 1000 ? (stat.views/1000).toFixed(1) + 'k' : stat.views || 0}</span>
-                                <span className="text-[10px] uppercase font-bold text-gray-500">Views</span>
-                              </div>
-                              <div>
-                                <span className="block text-xl font-bold text-gray-900">{stat.likes || 0}</span>
-                                <span className="text-[10px] uppercase font-bold text-gray-500">Likes</span>
-                              </div>
-                              <div>
-                                <span className="block text-xl font-bold text-gray-900">{stat.shares || 0}</span>
-                                <span className="text-[10px] uppercase font-bold text-gray-500">Shares</span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
                   )}
                 </div>
               );

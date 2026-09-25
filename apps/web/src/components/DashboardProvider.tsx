@@ -30,6 +30,8 @@ interface DashboardContextType {
   fetchUserTeams: (userId: string, requestedTeamName?: string) => Promise<void>;
 }
 
+const REALTIME_REFETCH_DEBOUNCE_MS = 500;
+
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
 
 export function DashboardProvider({ children }: { children: ReactNode }) {
@@ -92,17 +94,17 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
   const fetchTeamData = useCallback(async () => {
     if (!activeTeam) return;
-    
-    const { data: accountsData } = await supabase.from('social_accounts').select('*').eq('team_id', activeTeam.id);
+
+    // The four reads are independent, so run them together instead of one round trip after another.
+    const [{ data: accountsData }, { data: postsData }, { data: notifData }, { data: analyticsData }] = await Promise.all([
+      supabase.from('social_accounts').select('*').eq('team_id', activeTeam.id),
+      supabase.from('posts').select('*, publish_jobs(*), schedules(*)').eq('team_id', activeTeam.id).order('created_at', { ascending: false }),
+      supabase.from('notifications').select('*').eq('user_id', user?.id).order('created_at', { ascending: false }).limit(NOTIFICATION_LIMIT),
+      supabase.from('analytics').select('*').eq('team_id', activeTeam.id),
+    ]);
     if (accountsData) setAccounts(accountsData as SocialAccount[]);
-
-    const { data: postsData } = await supabase.from('posts').select('*, publish_jobs(*), schedules(*)').eq('team_id', activeTeam.id).order('created_at', { ascending: false });
     if (postsData) setPosts(postsData as Post[]);
-
-    const { data: notifData } = await supabase.from('notifications').select('*').eq('user_id', user?.id).order('created_at', { ascending: false }).limit(NOTIFICATION_LIMIT);
     if (notifData) setNotifications(withLocalRead(notifData as AppNotification[]));
-
-    const { data: analyticsData } = await supabase.from('analytics').select('*').eq('team_id', activeTeam.id);
     if (analyticsData) setAnalytics(analyticsData as AppAnalytics[]);
   }, [activeTeam, user?.id, withLocalRead]);
 
@@ -154,22 +156,29 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user) return;
+    // Publishing a post fires a burst of job/post/notification events; collapse them into one refetch.
+    let refetchTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleRefetch = () => {
+      clearTimeout(refetchTimer);
+      refetchTimer = setTimeout(() => { fetchTeamData(); }, REALTIME_REFETCH_DEBOUNCE_MS);
+    };
     const channel = supabase
       .channel('realtime:updates')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
         setNotifications(prev => [payload.new as AppNotification, ...prev].slice(0, NOTIFICATION_LIMIT));
         // Refresh team data to update timeline post statuses
-        fetchTeamData();
+        scheduleRefetch();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'publish_jobs', filter: `user_id=eq.${user.id}` }, () => {
-        fetchTeamData();
+        scheduleRefetch();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts', filter: `user_id=eq.${user.id}` }, () => {
-        fetchTeamData();
+        scheduleRefetch();
       })
       .subscribe();
       
     return () => {
+      clearTimeout(refetchTimer);
       supabase.removeChannel(channel);
     };
   }, [user, fetchTeamData]);

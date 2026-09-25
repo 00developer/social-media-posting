@@ -9,6 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
 import { getCachedTeamRole, setCachedTeamRole } from '@socialpush/shared';
+import { fetchAccountIdentity } from './identity';
 
 const PINTEREST_API_BASE = process.env.PINTEREST_API_BASE || 'https://api.pinterest.com';
 
@@ -85,11 +86,14 @@ app.get('/api/v1/auth/:platform/url', async (req, res) => {
     const appId = platform === 'threads' ? process.env.THREADS_CLIENT_ID : process.env.FACEBOOK_APP_ID;
     const redirectUri = encodeURIComponent(`${API_BASE_URL}/api/v1/auth/${platform}/callback`);
     
+    // Comment permissions are only requested when ENABLE_COMMENT_SCOPES=true: Meta rejects a login that asks for a
+    // permission the app has not been given yet (add them under the app's use cases first).
+    const commentScopes = process.env.ENABLE_COMMENT_SCOPES === 'true';
     let scopeStr = '';
     if (platform === 'threads') {
-      scopeStr = encodeURIComponent('threads_basic,threads_content_publish');
+      scopeStr = encodeURIComponent('threads_basic,threads_content_publish,threads_manage_insights' + (commentScopes ? ',threads_read_replies,threads_manage_replies' : ''));
     } else {
-      scopeStr = encodeURIComponent('pages_show_list,instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts,publish_video');
+      scopeStr = encodeURIComponent('pages_show_list,instagram_basic,instagram_content_publish,instagram_manage_insights,pages_read_engagement,pages_manage_posts,publish_video' + (commentScopes ? ',pages_read_user_content,pages_manage_engagement,instagram_manage_comments' : ''));
     }
     
     let url = '';
@@ -105,7 +109,7 @@ app.get('/api/v1/auth/:platform/url', async (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const redirectUri = process.env.GOOGLE_REDIRECT_URI;
-    const scope = encodeURIComponent('https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly');
+    const scope = encodeURIComponent('https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly' + (process.env.ENABLE_COMMENT_SCOPES === 'true' ? ' https://www.googleapis.com/auth/youtube.force-ssl' : ''));
     const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri!)}&response_type=code&scope=${scope}&state=${state}&access_type=offline&prompt=consent`;
     
     oauthStates.set(state, { codeVerifier: 'none', state, userId: userId.toString(), teamId: teamId.toString() });
@@ -146,6 +150,8 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
 
   try {
     let encryptedAccess, encryptedRefresh;
+    // Plain access token, kept only to look up the account's display name below (never stored as-is).
+    let plainAccessToken = '';
 
     if (platform === 'twitter') {
       const client = new TwitterApi({ clientId: process.env.TWITTER_CLIENT_ID || 'mock', clientSecret: process.env.TWITTER_CLIENT_SECRET || 'mock' });
@@ -197,6 +203,7 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
         finalToken = longLivedData.access_token || tokenData.access_token;
       }
       
+      plainAccessToken = finalToken;
       encryptedAccess = encrypt(finalToken);
       encryptedRefresh = encrypt('none'); 
     } else if (platform === 'youtube') {
@@ -219,6 +226,7 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
       
       if (tokenData.error) throw new Error(tokenData.error_description || tokenData.error);
       
+      plainAccessToken = tokenData.access_token;
       encryptedAccess = encrypt(tokenData.access_token);
       encryptedRefresh = tokenData.refresh_token ? encrypt(tokenData.refresh_token) : encrypt('none');
     } else if (platform === 'pinterest') {
@@ -354,12 +362,22 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
       encryptedRefresh = encrypt(`mock_${platform}_refresh_token`);
     }
 
+    // Save which account this is (Page name, @username, channel) so the Accounts page can show it.
+    // Cosmetic only: a failed lookup just leaves these empty.
+    const identity = plainAccessToken ? await fetchAccountIdentity(platform, plainAccessToken) : null;
+
     await supabase.from('social_accounts').insert({
       user_id: session.userId,
       team_id: session.teamId,
       platform,
       access_token_encrypted: encryptedAccess,
       refresh_token_encrypted: encryptedRefresh,
+      ...(identity && {
+        handle: identity.handle,
+        ...(identity.providerAccountId && { provider_account_id: identity.providerAccountId }),
+        ...(identity.channelTitle && { channel_title: identity.channelTitle }),
+        ...(identity.channelId && { channel_id: identity.channelId }),
+      }),
     });
 
     oauthStates.delete(state as string);

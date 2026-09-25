@@ -7,3 +7,4 @@ export const POST_SERVICE_URL = process.env.NEXT_PUBLIC_POST_SERVICE_URL || 'htt
 export const SCHEDULING_SERVICE_URL = process.env.NEXT_PUBLIC_SCHEDULING_SERVICE_URL || 'http://localhost:3004';
 export const MEDIA_SERVICE_URL = process.env.NEXT_PUBLIC_MEDIA_SERVICE_URL || 'http://localhost:3006';
 export const TEAM_SERVICE_URL = process.env.NEXT_PUBLIC_TEAM_SERVICE_URL || 'http://localhost:3009';
+export const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || 'http://localhost:3008';

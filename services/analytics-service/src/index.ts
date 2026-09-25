@@ -6,6 +6,8 @@ import crypto from 'crypto';
 import { Queue, Worker, Job } from 'bullmq';
 import { getRedisConnection, upstashRedis } from '@socialpush/shared';
 import { createClient } from '@supabase/supabase-js';
+import { syncComments, replyToComment, type CommentsContext } from './comments';
+import { syncPublishedPostStats, syncThreadsStats, backfillAnalyticsTeamIds, recordAnalyticsHistory } from './publishedStats';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
@@ -75,10 +77,56 @@ app.post('/api/v1/analytics/event', async (req, res) => {
   }
 });
 
+// --- Comments: read the comments on published posts and reply to them from the dashboard ---------------------------
+const commentsCtx: CommentsContext = { supabase, decrypt, accountServiceUrl: ACCOUNT_SERVICE_URL };
+
+// The caller is the signed-in dashboard user: check their Supabase token and that they belong to the team.
+async function authorizeTeam(req: express.Request, teamId: string | null | undefined): Promise<{ userId: string } | { error: string; status: number }> {
+  const token = (req.headers.authorization || '').replace(/^Bearer /i, '');
+  if (!token) return { error: 'Missing Authorization header', status: 401 };
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) return { error: 'Invalid or expired session', status: 401 };
+  if (!teamId) return { error: 'Missing team', status: 400 };
+  const { data: member } = await supabase.from('team_members').select('user_id').eq('team_id', teamId).eq('user_id', data.user.id).maybeSingle();
+  if (!member) return { error: 'You are not a member of this team', status: 403 };
+  return { userId: data.user.id };
+}
+
+// Pull the latest comments for a team now (the Comments page uses this for its Refresh button).
+app.post('/api/v1/comments/sync', async (req, res) => {
+  const auth = await authorizeTeam(req, req.body?.teamId);
+  if ('error' in auth) return res.status(auth.status).json({ error: auth.error });
+  try {
+    res.json({ success: true, saved: await syncComments(commentsCtx, { teamId: req.body.teamId }) });
+  } catch (err: any) {
+    console.error('[Comments] Sync failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reply to one stored comment on its platform.
+app.post('/api/v1/comments/reply', async (req, res) => {
+  const { commentId, text } = req.body || {};
+  const reply = typeof text === 'string' ? text.trim() : '';
+  if (!commentId || !reply) return res.status(400).json({ error: 'commentId and text are required' });
+  const { data: comment } = await supabase.from('post_comments').select('*').eq('id', commentId).maybeSingle();
+  if (!comment) return res.status(404).json({ error: 'Comment not found' });
+  const auth = await authorizeTeam(req, comment.team_id);
+  if ('error' in auth) return res.status(auth.status).json({ error: auth.error });
+  try {
+    res.json({ success: true, reply: await replyToComment(commentsCtx, comment, reply) });
+  } catch (err: any) {
+    console.error('[Comments] Reply failed:', err.message);
+    res.status(err.status && err.status < 500 ? 400 : 502).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3008;
 app.listen(PORT, () => {
   console.log(`Analytics API running on port ${PORT}`);
 });
+
+let pinterestSandboxLogged = false;
 
 const ANALYTICS_QUEUE_NAME = 'analytics-queue';
 const analyticsQueue = new Queue(ANALYTICS_QUEUE_NAME, { connection: redisConnection });
@@ -270,9 +318,18 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
     // 3. Sync Pinterest Analytics via API
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-    const { data: pinterestPins } = await supabase.from('pinterest_published_pins')
-      .select('*')
-      .gte('created_at', ninetyDaysAgo.toISOString());
+    // Pinterest refuses analytics requests in its sandbox ("This endpoint does not support sandbox requests"),
+    // so there is nothing to fetch until the app has Standard access and PINTEREST_API_BASE is the real API.
+    const pinterestSandbox = PINTEREST_API_BASE.includes('sandbox');
+    if (pinterestSandbox && !pinterestSandboxLogged) {
+      pinterestSandboxLogged = true;
+      console.log('[AnalyticsService] Skipping Pinterest analytics: the Pinterest sandbox does not support them.');
+    }
+    const { data: pinterestPins } = pinterestSandbox
+      ? { data: null }
+      : await supabase.from('pinterest_published_pins')
+          .select('*')
+          .gte('created_at', ninetyDaysAgo.toISOString());
 
     if (pinterestPins && pinterestPins.length > 0) {
       for (const pin of pinterestPins) {
@@ -343,79 +400,20 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
       console.log(`[AnalyticsService] Successfully synced Pinterest API stats for ${pinterestPins.length} pins.`);
     }
 
-    // 4. Sync Threads Analytics via API
-    const { data: threadsAccounts } = await supabase.from('social_accounts')
-      .select('*')
-      .eq('platform', 'threads');
+    // 4. Facebook / Instagram / LinkedIn stats for the posts whose platform ids the publisher saved
+    await syncPublishedPostStats(supabase, decrypt);
 
-    if (threadsAccounts && threadsAccounts.length > 0) {
-      for (const account of threadsAccounts) {
-        try {
-          const activeToken = decrypt(account.access_token_encrypted);
-          
-          // Fetch recent threads
-          const threadsRes = await fetch(`https://graph.threads.net/v1.0/me/threads?fields=id,text&access_token=${activeToken}`);
-          if (!threadsRes.ok) continue;
-          
-          const threadsData = await threadsRes.json();
-          const threads = threadsData.data || [];
-          
-          for (const thread of threads) {
-             if (!thread.text) continue;
-             
-             // Find matching post in our DB by text content (since we cannot add new tables for Threads)
-             const { data: matchedPost } = await supabase.from('posts')
-               .select('id')
-               .eq('user_id', account.user_id)
-               .eq('content', thread.text)
-               .limit(1)
-               .maybeSingle();
-               
-             if (!matchedPost) continue;
-             
-             // Fetch insights for this specific thread
-             const insightsRes = await fetch(`https://graph.threads.net/v1.0/${thread.id}/insights?metric=views,likes,replies,reposts,quotes&access_token=${activeToken}`);
-             if (!insightsRes.ok) continue;
-             
-             const insightsData = await insightsRes.json();
-             const metrics = insightsData.data || [];
-             let views = 0, likes = 0, replies = 0, reposts = 0, quotes = 0;
-             
-             for (const m of metrics) {
-                if (m.name === 'views') views = m.values[0].value;
-                if (m.name === 'likes') likes = m.values[0].value;
-                if (m.name === 'replies') replies = m.values[0].value;
-                if (m.name === 'reposts') reposts = m.values[0].value;
-                if (m.name === 'quotes') quotes = m.values[0].value;
-             }
-             
-             const shares = reposts + quotes + replies;
-             
-             const { data: existing } = await supabase.from('analytics')
-                .select('id')
-                .eq('post_id', matchedPost.id)
-                .eq('platform', 'threads')
-                .maybeSingle();
-                
-             if (existing) {
-                await supabase.from('analytics').update({
-                   views, likes, shares, recorded_at: new Date().toISOString()
-                }).eq('id', existing.id);
-             } else {
-                await supabase.from('analytics').insert({
-                   post_id: matchedPost.id,
-                   user_id: account.user_id,
-                   platform: 'threads',
-                   views, likes, shares, recorded_at: new Date().toISOString()
-                });
-             }
-          }
-        } catch (err: any) {
-           console.error(`[AnalyticsService] Failed to sync Threads stats for user ${account.user_id}:`, err.message);
-        }
-      }
-      console.log(`[AnalyticsService] Successfully synced Threads API stats for ${threadsAccounts.length} accounts.`);
-    }
+    // 5. Threads stats (by saved post id; older posts are matched by their text once and then saved)
+    await syncThreadsStats(supabase, decrypt);
+
+    // 6. Make sure every analytics row carries its team_id so the dashboard can load it
+    await backfillAnalyticsTeamIds(supabase);
+
+    // 7. Append the latest numbers to the history that feeds the Analytics page charts
+    await recordAnalyticsHistory(supabase);
+
+    // 8. Comments on published posts (Facebook, Instagram, Threads, YouTube)
+    await syncComments(commentsCtx);
 
   } catch (err: any) {
     console.error(`[AnalyticsService] Error:`, err.message);

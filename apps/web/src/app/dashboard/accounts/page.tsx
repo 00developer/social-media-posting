@@ -2,6 +2,7 @@
 
 import { useDashboard } from '@/components/DashboardProvider';
 import { ACCOUNT_SERVICE_URL } from '@/lib/apiUrls';
+import { getAccountLabel } from '@/lib/accountLabel';
 
 export default function AccountsPage() {
   const { user, activeTeam, accounts } = useDashboard();
@@ -86,6 +87,7 @@ export default function AccountsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
             {accounts.map(acc => {
+              const label = getAccountLabel(acc);
               const isExpiringSoon = acc.platform === 'linkedin' && typeof acc.refresh_token_expires_at === 'string' && new Date(acc.refresh_token_expires_at).getTime() - Date.now() < 30 * 24 * 60 * 60 * 1000;
               
               return (
@@ -96,7 +98,11 @@ export default function AccountsPage() {
                   </div>
                   <div>
                     <h4 className="font-semibold text-gray-900 capitalize">{acc.platform || 'Unknown'}</h4>
-                    <p className="text-xs text-gray-500 font-medium">Active Connection</p>
+                    {label ? (
+                      <p className="text-sm text-indigo-700 font-semibold truncate max-w-[14rem]" title={label}>{label}</p>
+                    ) : (
+                      <p className="text-xs text-gray-500 font-medium">Active Connection</p>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

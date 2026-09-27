@@ -3,7 +3,7 @@ import { buildThreads, filterThreads, type CommentRow } from './commentThreads';
 
 const c = (id: string, over: Partial<CommentRow> = {}): CommentRow => ({
   id: `row-${id}`, post_id: 'p1', platform: 'youtube', external_comment_id: id, parent_external_id: null,
-  author_name: 'Fan', text: id, commented_at: '2026-09-26T10:00:00Z', is_own: false, ...over,
+  author_name: 'Fan', text: id, commented_at: '2026-09-26T10:00:00Z', is_own: false, ai_status: null, ai_suggested_reply: null, ...over,
 });
 
 describe('buildThreads', () => {
@@ -52,5 +52,17 @@ describe('filterThreads', () => {
     expect(filterThreads(threads, { platform: 'all', status: 'unanswered' }).map((t) => t.root.external_comment_id)).toEqual(['b']);
     expect(filterThreads(threads, { status: 'answered' }).map((t) => t.root.external_comment_id)).toEqual(['a']);
     expect(filterThreads(threads, { postId: 'p2' })).toHaveLength(1);
+  });
+
+  it('hides AI-flagged spam by default and only shows it under the "spam" status', () => {
+    const withSpam = buildThreads([
+      c('a', { platform: 'facebook' }),
+      c('a1', { platform: 'facebook', parent_external_id: 'a', is_own: true, commented_at: '2026-09-26T11:00:00Z' }),
+      c('b', { platform: 'youtube', post_id: 'p2' }),
+      c('s', { platform: 'youtube', ai_status: 'skipped_spam' }),
+    ]);
+    expect(filterThreads(withSpam, {}).map((t) => t.root.external_comment_id)).not.toContain('s');
+    expect(filterThreads(withSpam, { status: 'unanswered' }).map((t) => t.root.external_comment_id)).not.toContain('s');
+    expect(filterThreads(withSpam, { status: 'spam' }).map((t) => t.root.external_comment_id)).toEqual(['s']);
   });
 });

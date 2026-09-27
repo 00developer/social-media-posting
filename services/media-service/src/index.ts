@@ -214,6 +214,50 @@ app.post('/api/v1/media/transcode-preview', upload.single('file'), async (req, r
   }
 });
 
+// A small, throwaway public image the AI Assistant can look at while generating a caption: for an image, a
+// downsized copy; for a video, a single frame grabbed a second in (the AI can't watch a video, only see a picture).
+// Stored under ai-context/ in the same public bucket the post media uses - these accumulate over time with no
+// cleanup job yet, which is fine at this scale but worth revisiting if storage usage becomes a concern.
+app.post('/api/v1/media/ai-thumbnail', upload.single('file'), async (req, res) => {
+  const { userId } = req.body;
+  const uploadedFile = req.file;
+  if (!uploadedFile || !userId) return res.status(400).json({ error: 'Missing parameters' });
+
+  const fileName = `ai-context/${userId}/${crypto.randomUUID()}.jpg`;
+  try {
+    const isVideo = uploadedFile.mimetype.startsWith('video/');
+    let jpeg: Buffer;
+
+    if (isVideo) {
+      const tempInput = path.join(os.tmpdir(), `in_${crypto.randomUUID()}.mp4`);
+      const tempFrame = path.join(os.tmpdir(), `frame_${crypto.randomUUID()}.jpg`);
+      await fs.promises.writeFile(tempInput, uploadedFile.buffer);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(tempInput)
+            .screenshots({ timestamps: ['1'], filename: path.basename(tempFrame), folder: path.dirname(tempFrame), size: '1024x?' })
+            .on('end', () => resolve())
+            .on('error', reject);
+        });
+        jpeg = await fs.promises.readFile(tempFrame);
+      } finally {
+        fs.promises.unlink(tempInput).catch(() => {});
+        fs.promises.unlink(tempFrame).catch(() => {});
+      }
+    } else {
+      jpeg = await sharp(uploadedFile.buffer).resize({ width: 1024, withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer();
+    }
+
+    const { error } = await supabase.storage.from('post_media').upload(fileName, jpeg, { contentType: 'image/jpeg', upsert: true });
+    if (error) throw error;
+    const { data: { publicUrl } } = supabase.storage.from('post_media').getPublicUrl(fileName);
+    res.json({ success: true, url: publicUrl });
+  } catch (error: any) {
+    console.error('[Media] AI thumbnail failed:', error.message);
+    res.status(500).json({ error: 'Could not prepare the media for the AI assistant.' });
+  }
+});
+
 const PORT = process.env.PORT || 3006;
 const server = app.listen(PORT, () => console.log(`Media Service listening on port ${PORT}`));
 server.timeout = 10 * 60 * 1000; // 10 minutes timeout to allow long video processing

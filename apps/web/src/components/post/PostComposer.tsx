@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDashboard, type Post } from '@/components/DashboardProvider';
 import { PlatformPreviewCard } from '@/components/post/PlatformPreviewCard';
 import { MEDIA_SERVICE_URL, POST_SERVICE_URL, SCHEDULING_SERVICE_URL } from '@/lib/apiUrls';
+import { takeAiDraftHandoff } from '@/lib/aiDraftHandoff';
 
 type PostComposerProps = {
   /** Lets the host page mirror the "uploading" placeholder card in its own timeline. */
@@ -29,6 +30,13 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
   const [fileInputKey, setFileInputKey] = useState(0);
   const [previewPlatform, setPreviewPlatform] = useState<string | null>(null);
   const [contentType, setContentType] = useState<'post' | 'reel'>('post');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<{ caption: string; paragraph: string; hashtags: string[] } | null>(null);
+  const [aiDraft, setAiDraft] = useState(''); // editable, pre-filled from aiResult; "Use in Post" copies this
+  const [aiImageUrl, setAiImageUrl] = useState<string | null>(null); // uploaded lazily, on first Generate click
+  const [aiImageUploading, setAiImageUploading] = useState(false);
   const [optimisticPost, setOptimisticPostState] = useState<Partial<Post> | null>(null);
   const setOptimisticPost = (post: Partial<Post> | null) => {
     setOptimisticPostState(post);
@@ -40,9 +48,17 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
     ? previewPlatform 
     : (selectedPlatforms.length > 0 ? selectedPlatforms[0] : null);
 
+  // Pre-fills the box when arriving from the standalone AI Assistant page's "Use in new post" (only ever runs once,
+  // right after mount, and only if the composer is still empty - never overwrites something the user is mid-typing).
+  useEffect(() => {
+    const handoff = takeAiDraftHandoff();
+    if (handoff) setNewPostContent((current) => current || handoff);
+  }, []);
+
   const handleMediaChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
     setMediaFile(file);
+    setAiImageUrl(null); // a new file needs a fresh AI-context upload
     if (mediaPreview) {
       URL.revokeObjectURL(mediaPreview.split('#')[0]);
     }
@@ -72,6 +88,61 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
     } else {
       setMediaPreview(null);
     }
+  };
+
+  const generateWithAi = async () => {
+    if (!user || !activeTeam || !aiPrompt.trim()) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      // Give the AI a look at the attached photo/video, uploading a small copy the first time (cached after that).
+      let imageUrl = aiImageUrl;
+      if (mediaFile && !imageUrl) {
+        setAiImageUploading(true);
+        try {
+          const formData = new FormData();
+          formData.append('file', mediaFile);
+          formData.append('userId', user.id);
+          const uploadRes = await fetch(`${MEDIA_SERVICE_URL}/api/v1/media/ai-thumbnail`, { method: 'POST', body: formData });
+          const uploadData = await uploadRes.json();
+          if (uploadRes.ok && uploadData.success) {
+            imageUrl = uploadData.url;
+            setAiImageUrl(uploadData.url);
+          } else {
+            console.warn('AI thumbnail upload failed, generating from the prompt alone:', uploadData.error);
+          }
+        } finally {
+          setAiImageUploading(false);
+        }
+      }
+
+      const res = await fetch(`${POST_SERVICE_URL}/api/v1/ai/caption`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, teamId: activeTeam.id, prompt: aiPrompt.trim(), platform: activePreviewPlatform ?? undefined, imageUrl: imageUrl ?? undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Could not generate a result.');
+      setAiResult(data.data);
+      setAiDraft(`${data.data.caption}\n\n${data.data.hashtags.join(' ')}`);
+    } catch (e: unknown) {
+      setAiError(e instanceof Error ? e.message : 'Could not generate a result.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const useAiVersion = (kind: 'caption' | 'paragraph') => {
+    if (!aiResult) return;
+    setAiDraft(`${aiResult[kind]}\n\n${aiResult.hashtags.join(' ')}`);
+  };
+
+  const insertAiDraft = () => {
+    if (!aiDraft.trim()) return;
+    setNewPostContent((current) => (current.trim() ? `${current}\n\n${aiDraft}` : aiDraft));
+    setAiResult(null);
+    setAiDraft('');
+    setAiPrompt('');
   };
 
   const handleCreatePost = async (actionType: PostActionType) => {
@@ -174,6 +245,49 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
         Compose Post
       </h2>
       
+      {activeTeam?.role !== 'viewer' && (
+        <div className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+          <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-indigo-600">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
+            AI Assistant
+          </label>
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !aiLoading) { e.preventDefault(); generateWithAi(); } }}
+              placeholder="e.g. weekend sale on handmade candles"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none"
+            />
+            <button type="button" onClick={generateWithAi} disabled={aiLoading || !aiPrompt.trim()}
+              className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+              {aiImageUploading ? 'Preparing photo...' : aiLoading ? 'Generating...' : 'Generate'}
+            </button>
+          </div>
+          {mediaFile && <p className="mt-1.5 text-xs text-indigo-500">Will look at your attached {mediaFile.type.startsWith('video/') ? 'video (first frame)' : 'photo'} for context.</p>}
+          {aiError && <p className="mt-2 text-sm text-red-600">{aiError}</p>}
+          {aiResult && (
+            <div className="mt-3 space-y-2">
+              <div className="flex gap-1.5">
+                <button type="button" onClick={() => useAiVersion('caption')} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50">Short caption</button>
+                <button type="button" onClick={() => useAiVersion('paragraph')} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50">Longer paragraph</button>
+              </div>
+              <textarea
+                value={aiDraft}
+                onChange={(e) => setAiDraft(e.target.value)}
+                rows={4}
+                className="w-full rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-gray-500">Review and edit above, then add it to your post below.</p>
+                <button type="button" onClick={insertAiDraft} className="shrink-0 rounded-lg bg-gray-900 px-4 py-1.5 text-sm font-semibold text-white hover:bg-gray-800">Use in Post</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <textarea
         className="w-full border border-gray-200 rounded-xl p-4 mb-5 text-gray-800 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none resize-none placeholder-gray-400"
         rows={5}

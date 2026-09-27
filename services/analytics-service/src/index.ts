@@ -8,6 +8,8 @@ import { getRedisConnection, upstashRedis } from '@socialpush/shared';
 import { createClient } from '@supabase/supabase-js';
 import { syncComments, replyToComment, type CommentsContext } from './comments';
 import { syncPublishedPostStats, syncThreadsStats, backfillAnalyticsTeamIds, recordAnalyticsHistory } from './publishedStats';
+import { suggestReplies } from './aiComments';
+import { classifyComment, generateReply, checkAndRecordUsage, AiNotConfiguredError } from '@socialpush/ai';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
@@ -118,6 +120,42 @@ app.post('/api/v1/comments/reply', async (req, res) => {
   } catch (err: any) {
     console.error('[Comments] Reply failed:', err.message);
     res.status(err.status && err.status < 500 ? 400 : 502).json({ error: err.message });
+  }
+});
+
+// Re-runs classification + (for a "normal" comment) the reply draft for one comment on demand - the Comments
+// page's "Regenerate" button. Counts against the team's AI usage the same as the background job does.
+app.post('/api/v1/comments/:id/regenerate-suggestion', async (req, res) => {
+  const { data: comment } = await supabase.from('post_comments').select('*').eq('id', req.params.id).maybeSingle();
+  if (!comment) return res.status(404).json({ error: 'Comment not found' });
+  const auth = await authorizeTeam(req, comment.team_id);
+  if ('error' in auth) return res.status(auth.status).json({ error: auth.error });
+
+  try {
+    const { data: post } = await supabase.from('posts').select('content').eq('id', comment.post_id).maybeSingle();
+    const postCaption = post?.content || undefined;
+
+    const classifyUsage = await checkAndRecordUsage(supabase, comment.team_id, 'classify');
+    if (!classifyUsage.allowed) return res.status(429).json({ error: 'This team has reached its AI generation limit for this month.' });
+    const category = await classifyComment({ commentText: comment.text, postCaption });
+
+    let updates: Record<string, unknown> = { ai_classified_at: new Date().toISOString() };
+    if (category === 'spam') updates = { ...updates, ai_status: 'skipped_spam', ai_suggested_reply: null };
+    else if (category === 'negative') updates = { ...updates, ai_status: 'flagged_negative', ai_suggested_reply: null };
+    else {
+      const replyUsage = await checkAndRecordUsage(supabase, comment.team_id, 'reply');
+      if (!replyUsage.allowed) return res.status(429).json({ error: 'This team has reached its AI generation limit for this month.' });
+      const suggestion = await generateReply({ commentText: comment.text, authorName: comment.author_name, postCaption });
+      updates = { ...updates, ai_status: 'suggested', ai_suggested_reply: suggestion };
+    }
+
+    const { data: updated, error } = await supabase.from('post_comments').update(updates).eq('id', comment.id).select().single();
+    if (error) throw error;
+    res.json({ success: true, comment: updated });
+  } catch (err: any) {
+    if (err instanceof AiNotConfiguredError) return res.status(503).json({ error: err.message });
+    console.error('[AI] Regenerate suggestion failed:', err.message);
+    res.status(502).json({ error: 'The AI assistant could not generate a result. Please try again.' });
   }
 });
 
@@ -414,6 +452,12 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
 
     // 8. Comments on published posts (Facebook, Instagram, Threads, YouTube)
     await syncComments(commentsCtx);
+
+    // 9. AI Assistant: classify new comments and draft replies for the ones worth answering
+    const aiStats = await suggestReplies(commentsCtx);
+    if (aiStats.suggested || aiStats.skipped || aiStats.flagged) {
+      console.log(`[AI] Comments: ${aiStats.suggested} suggested, ${aiStats.skipped} spam skipped, ${aiStats.flagged} flagged, ${aiStats.autoSent} auto-sent.`);
+    }
 
   } catch (err: any) {
     console.error(`[AnalyticsService] Error:`, err.message);

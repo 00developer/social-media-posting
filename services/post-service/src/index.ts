@@ -5,6 +5,7 @@ import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { getCachedTeamRole, setCachedTeamRole, upstashRedis, getRedisConnection } from '@socialpush/shared';
 import { getContentProblem, getEditBlockReason } from './editability';
+import { generateCaption, generateCaptionFromImage, checkAndRecordUsage, AiNotConfiguredError } from '@socialpush/ai';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 const app = express();
@@ -251,6 +252,41 @@ app.patch('/api/v1/posts/:id', async (req, res) => {
     res.json({ success: true, data: updated });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// AI Assistant: turns a short prompt into a caption, a longer paragraph and hashtags, for the composer's
+// "Generate" button. The result is only a draft - nothing here saves or publishes anything.
+app.post('/api/v1/ai/caption', async (req, res) => {
+  const { userId, teamId, prompt, platform, imageUrl } = req.body ?? {};
+  if (typeof userId !== 'string' || typeof teamId !== 'string') return res.status(400).json({ error: 'Missing required fields' });
+  const cleanPrompt = typeof prompt === 'string' ? prompt.trim() : '';
+  if (!cleanPrompt) return res.status(400).json({ error: 'Enter a prompt to generate from.' });
+
+  let role = await getCachedTeamRole(teamId, userId);
+  if (!role) {
+    const { data: member } = await supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', userId).maybeSingle();
+    if (member) {
+      role = member.role;
+      await setCachedTeamRole(teamId, userId, role as string);
+    }
+  }
+  if (!role) return res.status(403).json({ error: 'Unauthorized' });
+  if (role === 'viewer') return res.status(403).json({ error: 'Unauthorized: Viewers cannot use the AI assistant' });
+
+  try {
+    const usage = await checkAndRecordUsage(supabase, teamId, 'caption');
+    if (!usage.allowed) return res.status(429).json({ error: 'This team has reached its AI generation limit for this month.' });
+
+    const platformArg = typeof platform === 'string' ? platform : undefined;
+    const result = typeof imageUrl === 'string' && imageUrl
+      ? await generateCaptionFromImage({ prompt: cleanPrompt, imageUrl, platform: platformArg })
+      : await generateCaption({ prompt: cleanPrompt, platform: platformArg });
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    if (err instanceof AiNotConfiguredError) return res.status(503).json({ error: err.message });
+    console.error('[AI] Caption generation failed:', err.message);
+    res.status(502).json({ error: 'The AI assistant could not generate a result. Please try again.' });
   }
 });
 

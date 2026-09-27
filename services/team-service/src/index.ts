@@ -34,7 +34,7 @@ app.post('/api/v1/teams/:teamId/invite', async (req, res) => {
   if (!inviterRole) {
     const { data: inviter } = await supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', inviterId).single();
     if (inviter) {
-      inviterRole = inviter.role;
+      inviterRole = inviter.role as string;
       await setCachedTeamRole(teamId, inviterId, inviterRole);
     }
   }
@@ -70,7 +70,7 @@ app.post('/api/v1/teams/:teamId/billing', async (req, res) => {
   if (!requesterRole) {
     const { data: requester } = await supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', requesterId).single();
     if (requester) {
-      requesterRole = requester.role;
+      requesterRole = requester.role as string;
       await setCachedTeamRole(teamId, requesterId, requesterRole);
     }
   }
@@ -81,6 +81,41 @@ app.post('/api/v1/teams/:teamId/billing', async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   
   res.json({ success: true });
+});
+
+// Team name + AI auto-reply toggle. Owner-only, same pattern as billing above. This goes through the backend
+// (service role) rather than a direct client-side Supabase update: the `teams` UPDATE RLS policy checks
+// team_members via a nested EXISTS, and on the live project that combination was silently returning 0 rows for a
+// real, correctly-owner-matching request (PostgREST then reports "Cannot coerce the result to a single JSON
+// object" once the caller asks for the row back) - rather than chase that further, settings changes now go
+// through the same trusted, already-working path as Invite and Billing.
+app.patch('/api/v1/teams/:teamId/settings', async (req, res) => {
+  const { teamId } = req.params;
+  const { name, aiAutoReplyEnabled, requesterId } = req.body ?? {};
+  if (!requesterId) return res.status(400).json({ error: 'requesterId is required' });
+
+  let requesterRole = await getCachedTeamRole(teamId, requesterId);
+  if (!requesterRole) {
+    const { data: requester } = await supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', requesterId).single();
+    if (requester) {
+      requesterRole = requester.role as string;
+      await setCachedTeamRole(teamId, requesterId, requesterRole);
+    }
+  }
+  if (!requesterRole || requesterRole !== 'owner') return res.status(403).json({ error: 'Only the team owner can change these settings' });
+
+  const updates: Record<string, unknown> = {};
+  if (typeof name === 'string') {
+    const trimmed = name.trim();
+    if (!trimmed) return res.status(400).json({ error: 'Team name cannot be empty' });
+    updates.name = trimmed;
+  }
+  if (typeof aiAutoReplyEnabled === 'boolean') updates.ai_auto_reply_enabled = aiAutoReplyEnabled;
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+  const { data, error } = await supabase.from('teams').update(updates).eq('id', teamId).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, team: data });
 });
 
 const PORT = process.env.PORT || 3009;

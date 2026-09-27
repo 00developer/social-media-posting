@@ -12,6 +12,7 @@ const STATUSES = [
   { id: 'all', label: 'All' },
   { id: 'unanswered', label: 'Needs reply' },
   { id: 'answered', label: 'Answered' },
+  { id: 'spam', label: 'Spam' },
 ] as const;
 
 async function callService(path: string, body: unknown) {
@@ -41,12 +42,14 @@ export default function CommentsPage() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [isAiDraft, setIsAiDraft] = useState(false); // whether the open draft is the AI's untouched suggestion
 
   const load = useCallback(async () => {
     if (!activeTeam) return;
     const { data, error: err } = await supabase
       .from('post_comments')
-      .select('id, post_id, platform, external_comment_id, parent_external_id, author_name, text, commented_at, is_own')
+      .select('id, post_id, platform, external_comment_id, parent_external_id, author_name, text, commented_at, is_own, ai_status, ai_suggested_reply')
       .eq('team_id', activeTeam.id)
       .order('commented_at', { ascending: false })
       .limit(2000);
@@ -86,6 +89,29 @@ export default function CommentsPage() {
     return ids.map((id) => ({ id, label: postTitle.get(id) || '(no caption)' }));
   }, [threads, platform, postTitle]);
   const waiting = threads.filter((t) => t.needsReply).length;
+
+  const openReply = (t: Thread) => {
+    setOpenId(t.root.id);
+    setError(null);
+    const suggestion = t.root.ai_status === 'suggested' ? t.root.ai_suggested_reply : null;
+    setDraft(suggestion || '');
+    setIsAiDraft(!!suggestion);
+  };
+
+  const regenerate = async (t: Thread) => {
+    setRegenerating(true);
+    setError(null);
+    try {
+      const { comment } = await callService(`/api/v1/comments/${t.root.id}/regenerate-suggestion`, {});
+      setRows((prev) => prev.map((r) => (r.id === comment.id ? { ...r, ai_status: comment.ai_status, ai_suggested_reply: comment.ai_suggested_reply } : r)));
+      if (comment.ai_status === 'suggested' && comment.ai_suggested_reply) { setDraft(comment.ai_suggested_reply); setIsAiDraft(true); }
+      else setNotice(comment.ai_status === 'skipped_spam' ? 'The AI now thinks this looks like spam - no reply drafted.' : 'The AI flagged this as needing your own judgement - no reply drafted.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not regenerate a suggestion');
+    } finally {
+      setRegenerating(false);
+    }
+  };
 
   const send = async (thread: Thread) => {
     const text = draft.trim();
@@ -159,9 +185,15 @@ export default function CommentsPage() {
                 </span>
                 <span>on</span>
                 <span className="max-w-xs truncate font-medium text-gray-700">{(t.root.post_id && postTitle.get(t.root.post_id)) || '(post)'}</span>
-                <span className={`ml-auto rounded-full px-2 py-0.5 font-medium ${t.needsReply ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                  {t.needsReply ? 'Needs reply' : t.root.is_own && t.replies.length === 0 ? 'Your comment' : 'Answered'}
-                </span>
+                {t.needsReply && t.root.ai_status === 'flagged_negative' ? (
+                  <span className="ml-auto rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-700">⚠ Flagged - needs your judgement</span>
+                ) : t.needsReply && t.root.ai_status === 'suggested' ? (
+                  <span className="ml-auto rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700">✨ AI reply ready</span>
+                ) : (
+                  <span className={`ml-auto rounded-full px-2 py-0.5 font-medium ${t.needsReply ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                    {t.needsReply ? 'Needs reply' : t.root.is_own && t.replies.length === 0 ? 'Your comment' : 'Answered'}
+                  </span>
+                )}
               </div>
 
               <div className="mt-3">
@@ -183,18 +215,22 @@ export default function CommentsPage() {
 
               {openId === t.root.id ? (
                 <div className="mt-3 space-y-2">
-                  <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} autoFocus placeholder="Write your reply..."
+                  {isAiDraft && <p className="text-xs font-medium text-violet-600">✨ AI-drafted reply - review and edit before sending.</p>}
+                  <textarea value={draft} onChange={(e) => { setDraft(e.target.value); setIsAiDraft(false); }} rows={3} autoFocus placeholder="Write your reply..."
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none" />
                   {error && <p className="text-sm text-red-600">{error}</p>}
                   <div className="flex gap-2">
                     <button type="button" onClick={() => send(t)} disabled={sending || !draft.trim()} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
                       {sending ? 'Sending...' : 'Send reply'}
                     </button>
+                    <button type="button" onClick={() => regenerate(t)} disabled={regenerating} className="rounded-lg border border-violet-200 px-4 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+                      {regenerating ? 'Thinking...' : '✨ AI suggest'}
+                    </button>
                     <button type="button" onClick={() => { setOpenId(null); setError(null); }} className="rounded-lg border border-gray-200 px-4 py-1.5 text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
                   </div>
                 </div>
               ) : (
-                <button type="button" onClick={() => { setOpenId(t.root.id); setDraft(''); setError(null); }} className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-800">Reply</button>
+                <button type="button" onClick={() => openReply(t)} className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-800">Reply</button>
               )}
             </li>
           ))}

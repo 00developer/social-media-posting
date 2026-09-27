@@ -11,6 +11,8 @@ export type CommentRow = {
   text: string;
   commented_at: string | null;
   is_own: boolean;
+  ai_status: 'suggested' | 'skipped_spam' | 'flagged_negative' | null;
+  ai_suggested_reply: string | null;
 };
 
 export type Thread = {
@@ -59,10 +61,16 @@ export function buildThreads(rows: CommentRow[]): Thread[] {
   return [...threads.values()].sort((a, b) => b.lastActivity - a.lastActivity);
 }
 
-export type ThreadFilter = { platform?: string; status?: 'all' | 'unanswered' | 'answered'; postId?: string };
+export type ThreadFilter = { platform?: string; status?: 'all' | 'unanswered' | 'answered' | 'spam'; postId?: string };
 
 export function filterThreads(threads: Thread[], f: ThreadFilter): Thread[] {
   return threads.filter((t) => {
+    // The AI marked this as spam: hidden everywhere except the explicit "Spam" filter, so it never counts as
+    // "needs reply" by default.
+    const isSpam = t.root.ai_status === 'skipped_spam';
+    if (f.status === 'spam') return isSpam && (!f.platform || f.platform === 'all' || t.root.platform === f.platform);
+    if (isSpam) return false;
+
     if (f.platform && f.platform !== 'all' && t.root.platform !== f.platform) return false;
     if (f.postId && f.postId !== 'all' && t.root.post_id !== f.postId) return false;
     if (f.status === 'unanswered' && !t.needsReply) return false;

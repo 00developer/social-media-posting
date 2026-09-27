@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import { NOTIFICATION_LIMIT, NOTIFICATION_POLL_MS } from '@/lib/notifications';
 
-export type Team = { id: string; name?: string; plan?: string; role?: string; [key: string]: unknown };
+export type Team = { id: string; name?: string; plan?: string; role?: string; ai_auto_reply_enabled?: boolean; [key: string]: unknown };
 export type SocialAccount = { id: string; platform?: string; [key: string]: unknown };
 export type PublishJob = { status: string; error_message?: string; [key: string]: unknown };
 export type Schedule = { scheduled_at: string; platform: string; [key: string]: unknown };
@@ -51,7 +51,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   const fetchUserTeamsRaw = useCallback(async function fetchTeams(userId: string, requestedTeamName?: string): Promise<void> {
-    const { data: teamData, error } = await supabase.from('team_members').select('team_id, role, teams(id, name, plan)').eq('user_id', userId);
+    const { data: teamData, error } = await supabase.from('team_members').select('team_id, role, teams(id, name, plan, ai_auto_reply_enabled)').eq('user_id', userId);
     if (error) {
       // Don't fall through to auto-create on a failed read - that would create a
       // duplicate "My Personal Team" even though the user's real team(s) just failed to load.
@@ -124,19 +124,27 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   useEffect(() => {
+    // React (dev / Strict Mode) mounts this effect, cleans it up, then mounts it again - the first mount's async
+    // checkUser() keeps running after that cleanup and can resolve after the component has already remounted.
+    // Calling router.push() from that stale first instance is what threw "Router action dispatched before
+    // initialization": the redirect fired against a router reference from an instance React had already torn
+    // down. `active` skips any navigation/state update once this particular effect run has been cleaned up.
+    let active = true;
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!active) return;
       if (!session) {
         router.push('/login');
       } else {
         setUser(session.user);
         await fetchUserTeams(session.user.id, session.user.user_metadata?.team_name);
       }
-      setLoading(false);
+      if (active) setLoading(false);
     };
     checkUser();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
       if (event === 'SIGNED_OUT') {
         router.push('/login');
       } else if (session) {
@@ -145,7 +153,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => authListener.subscription.unsubscribe();
+    return () => { active = false; authListener.subscription.unsubscribe(); };
   }, [router, fetchUserTeams]);
 
   useEffect(() => {

@@ -15,7 +15,8 @@
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "twitter-api-v2": "^1.15.2",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "@socialpush/ai": "^1.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

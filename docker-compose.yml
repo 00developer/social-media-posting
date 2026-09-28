@@ -1,0 +1,103 @@
+# Runs the whole stack from the Dockerfiles in this repo - either to test the built images
+# locally before deploying, or as a starting point for a single-host deployment (e.g. one VM
+# running all 10 containers). Each service still needs Redis and Supabase reachable from wherever
+# these containers run; nothing here provisions those for you.
+#
+# Usage:
+#   1. Fill in the root .env (see .env.example) - every backend container loads it via env_file.
+#   2. Set the NEXT_PUBLIC_* build args below (apps/web bakes them in at build time - see
+#      apps/web/Dockerfile's own comment for why). The defaults point at localhost, which only
+#      works if you're hitting this stack from the same machine it runs on.
+#   3. docker compose up --build
+#
+# ACCOUNT_SERVICE_URL / PUBLISHING_SERVICE_URL below override the code's localhost defaults with
+# the containers' own service names, which Docker's internal DNS resolves for you - the same
+# variables, just pointed at each other instead of localhost.
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+        NEXT_PUBLIC_ACCOUNT_SERVICE_URL: ${NEXT_PUBLIC_ACCOUNT_SERVICE_URL:-http://localhost:3001}
+        NEXT_PUBLIC_POST_SERVICE_URL: ${NEXT_PUBLIC_POST_SERVICE_URL:-http://localhost:3002}
+        NEXT_PUBLIC_SCHEDULING_SERVICE_URL: ${NEXT_PUBLIC_SCHEDULING_SERVICE_URL:-http://localhost:3004}
+        NEXT_PUBLIC_MEDIA_SERVICE_URL: ${NEXT_PUBLIC_MEDIA_SERVICE_URL:-http://localhost:3006}
+        NEXT_PUBLIC_TEAM_SERVICE_URL: ${NEXT_PUBLIC_TEAM_SERVICE_URL:-http://localhost:3009}
+        NEXT_PUBLIC_ANALYTICS_SERVICE_URL: ${NEXT_PUBLIC_ANALYTICS_SERVICE_URL:-http://localhost:3008}
+    ports: ["3000:3000"]
+    restart: unless-stopped
+
+  account-service:
+    build: { context: ., args: { SERVICE: account-service } }
+    env_file: .env
+    environment:
+      PORT: 3001
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:3001}
+    ports: ["3001:3001"]
+    restart: unless-stopped
+
+  post-service:
+    build: { context: ., args: { SERVICE: post-service } }
+    env_file: .env
+    environment:
+      PORT: 3002
+    ports: ["3002:3002"]
+    restart: unless-stopped
+
+  publishing-service:
+    build: { context: ., args: { SERVICE: publishing-service } }
+    env_file: .env
+    environment:
+      PORT: 3003
+      ACCOUNT_SERVICE_URL: http://account-service:3001
+    ports: ["3003:3003"]
+    restart: unless-stopped
+
+  scheduling-service:
+    build: { context: ., args: { SERVICE: scheduling-service } }
+    env_file: .env
+    environment:
+      PORT: 3004
+    ports: ["3004:3004"]
+    restart: unless-stopped
+
+  worker:
+    build: { context: ., args: { SERVICE: worker } }
+    env_file: .env
+    environment:
+      PUBLISHING_SERVICE_URL: http://publishing-service:3003
+    restart: unless-stopped
+
+  media-service:
+    build: { context: ., args: { SERVICE: media-service } }
+    env_file: .env
+    environment:
+      PORT: 3006
+    ports: ["3006:3006"]
+    restart: unless-stopped
+
+  notification-service:
+    build: { context: ., args: { SERVICE: notification-service } }
+    env_file: .env
+    restart: unless-stopped
+
+  analytics-service:
+    build: { context: ., args: { SERVICE: analytics-service } }
+    env_file: .env
+    environment:
+      PORT: 3008
+      ACCOUNT_SERVICE_URL: http://account-service:3001
+    ports: ["3008:3008"]
+    restart: unless-stopped
+
+  team-service:
+    build: { context: ., args: { SERVICE: team-service } }
+    env_file: .env
+    environment:
+      PORT: 3009
+    ports: ["3009:3009"]
+    restart: unless-stopped

@@ -29,7 +29,7 @@ export async function generateCaption(opts: { prompt: string; mediaDescription?:
 export async function generateCaptionFromImage(opts: { prompt: string; imageUrl: string; platform?: string }): Promise<CaptionResult> {
   const content: Message['content'] = [
     { type: 'text', text: `Prompt: ${opts.prompt}${opts.platform ? `\nTarget platform: ${opts.platform}` : ''}` },
-    { type: 'image', source: { type: 'url', url: opts.imageUrl } },
+    { type: 'image_url', image_url: { url: opts.imageUrl } },
   ];
   const text = await complete({ model: GENERATE_MODEL, system: CAPTION_SYSTEM, messages: [{ role: 'user', content }], maxTokens: 500 });
   const result = parseJson<CaptionResult>(text);

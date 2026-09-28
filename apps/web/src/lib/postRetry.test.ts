@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+
+vi.mock('./supabase', () => ({ authHeader: async () => ({ Authorization: 'Bearer test-token' }) }));
+
 import { getFailedPlatforms, getFailureLines, getRetryNotes, isPostFailed, retryButtonLabel, retryFailedPost } from './postRetry';
 
 const job = (platform: string, status: string, minute = 1, extra: Record<string, unknown> = {}) => ({ platform, status, created_at: `2026-09-22T10:${String(minute).padStart(2, '0')}:00Z`, ...extra });
@@ -78,34 +81,35 @@ describe('retryFailedPost', () => {
     return fn;
   };
 
-  it('posts to the scheduling-service and returns the retried platforms', async () => {
+  it('posts to the scheduling-service (with the caller\'s auth header) and returns the retried platforms', async () => {
     const fn = stubFetch(200, { success: true, retried: ['facebook'] });
-    expect(await retryFailedPost('u1', 'p1')).toEqual({ ok: true, retried: ['facebook'] });
+    expect(await retryFailedPost('p1')).toEqual({ ok: true, retried: ['facebook'] });
     const [url, init] = fn.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('http://localhost:3004/api/v1/posts/p1/retry');
     expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body as string)).toEqual({ userId: 'u1' });
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-token');
+    expect(JSON.parse(init.body as string)).toEqual({});
   });
 
   it('sends a platform filter only when one is given', async () => {
     const fn = stubFetch(200, { success: true, retried: ['youtube'] });
-    await retryFailedPost('u1', 'p1', ['youtube']);
-    expect(JSON.parse((fn.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ userId: 'u1', platforms: ['youtube'] });
-    await retryFailedPost('u1', 'p1', []);
-    expect(JSON.parse((fn.mock.calls[1] as unknown as [string, RequestInit])[1].body as string)).toEqual({ userId: 'u1' });
+    await retryFailedPost('p1', ['youtube']);
+    expect(JSON.parse((fn.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ platforms: ['youtube'] });
+    await retryFailedPost('p1', []);
+    expect(JSON.parse((fn.mock.calls[1] as unknown as [string, RequestInit])[1].body as string)).toEqual({});
   });
 
   it('turns a server refusal into a readable result, flagging "nothing to retry"', async () => {
     stubFetch(409, { error: 'Nothing to retry: this post has no failed platforms.', code: 'NOTHING_TO_RETRY' });
-    expect(await retryFailedPost('u1', 'p1')).toEqual({ ok: false, error: 'Nothing to retry: this post has no failed platforms.', nothingToRetry: true });
+    expect(await retryFailedPost('p1')).toEqual({ ok: false, error: 'Nothing to retry: this post has no failed platforms.', nothingToRetry: true });
     stubFetch(403, { error: 'Unauthorized: Viewers cannot retry posts' });
-    expect(await retryFailedPost('u1', 'p1')).toMatchObject({ ok: false, error: 'Unauthorized: Viewers cannot retry posts' });
+    expect(await retryFailedPost('p1')).toMatchObject({ ok: false, error: 'Unauthorized: Viewers cannot retry posts' });
   });
 
   it('copes with a non-JSON error and with the service being down', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 502, json: async () => { throw new Error('not json'); } }) as unknown as Response));
-    expect(await retryFailedPost('u1', 'p1')).toEqual({ ok: false, error: 'Could not retry (502).', nothingToRetry: false });
+    expect(await retryFailedPost('p1')).toEqual({ ok: false, error: 'Could not retry (502).', nothingToRetry: false });
     stubFetch(0, null, true);
-    expect(await retryFailedPost('u1', 'p1')).toMatchObject({ ok: false, error: expect.stringContaining('scheduling service') });
+    expect(await retryFailedPost('p1')).toMatchObject({ ok: false, error: expect.stringContaining('scheduling service') });
   });
 });

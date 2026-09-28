@@ -5,6 +5,7 @@ import { useDashboard, type Post } from '@/components/DashboardProvider';
 import { PlatformPreviewCard } from '@/components/post/PlatformPreviewCard';
 import { MEDIA_SERVICE_URL, POST_SERVICE_URL, SCHEDULING_SERVICE_URL } from '@/lib/apiUrls';
 import { takeAiDraftHandoff } from '@/lib/aiDraftHandoff';
+import { authHeader } from '@/lib/supabase';
 
 type PostComposerProps = {
   /** Lets the host page mirror the "uploading" placeholder card in its own timeline. */
@@ -71,6 +72,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
           formData.append('file', file);
           const res = await fetch(`${MEDIA_SERVICE_URL}/api/v1/media/transcode-preview`, {
             method: 'POST',
+            headers: await authHeader(),
             body: formData
           });
           if (!res.ok) throw new Error('Transcode failed');
@@ -102,8 +104,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
         try {
           const formData = new FormData();
           formData.append('file', mediaFile);
-          formData.append('userId', user.id);
-          const uploadRes = await fetch(`${MEDIA_SERVICE_URL}/api/v1/media/ai-thumbnail`, { method: 'POST', body: formData });
+          const uploadRes = await fetch(`${MEDIA_SERVICE_URL}/api/v1/media/ai-thumbnail`, { method: 'POST', headers: await authHeader(), body: formData });
           const uploadData = await uploadRes.json();
           if (uploadRes.ok && uploadData.success) {
             imageUrl = uploadData.url;
@@ -118,8 +119,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
 
       const res = await fetch(`${POST_SERVICE_URL}/api/v1/ai/caption`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, teamId: activeTeam.id, prompt: aiPrompt.trim(), platform: activePreviewPlatform ?? undefined, imageUrl: imageUrl ?? undefined }),
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ teamId: activeTeam.id, prompt: aiPrompt.trim(), platform: activePreviewPlatform ?? undefined, imageUrl: imageUrl ?? undefined }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Could not generate a result.');
@@ -166,12 +167,12 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
       if (mediaFile) {
         const formData = new FormData();
         formData.append('file', mediaFile);
-        formData.append('userId', user.id);
         formData.append('platforms', selectedPlatforms.join(','));
         formData.append('contentType', contentType);
 
         const mediaRes = await fetch(`${MEDIA_SERVICE_URL}/api/v1/media/upload`, {
           method: 'POST',
+          headers: await authHeader(),
           body: formData
         });
         const mediaData = await mediaRes.json();
@@ -185,8 +186,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
 
       const res = await fetch(`${POST_SERVICE_URL}/api/v1/posts`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, teamId: activeTeam.id, content: newPostContent, mediaUrl: JSON.stringify(mediaUrls) })
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ teamId: activeTeam.id, content: newPostContent, mediaUrl: JSON.stringify(mediaUrls) })
       });
       const data = await res.json();
       
@@ -200,9 +201,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
 
           const scheduleRes = await fetch(`${SCHEDULING_SERVICE_URL}/api/v1/schedules`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
             body: JSON.stringify({
-              userId: user.id,
               postId: postId,
               platforms: selectedPlatforms,
               scheduledAt: runAt.toISOString(),

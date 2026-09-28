@@ -7,6 +7,7 @@
 
 import { getLatestJobs, type CalendarJob } from './calendarStatus';
 import { SCHEDULING_SERVICE_URL } from './apiUrls';
+import { authHeader } from './supabase';
 
 type JobRecord = Record<string, unknown>;
 export type PostWithJobs = { publish_jobs?: JobRecord[] };
@@ -58,12 +59,12 @@ export function retryButtonLabel(failedCount: number, busy: boolean): string {
 export type RetryResult = { ok: true; retried: string[] } | { ok: false; error: string; nothingToRetry?: boolean };
 
 /** Asks the scheduling-service to re-queue the failed platforms of a post (optionally only some of them). */
-export async function retryFailedPost(userId: string, postId: string, platforms?: string[]): Promise<RetryResult> {
+export async function retryFailedPost(postId: string, platforms?: string[]): Promise<RetryResult> {
   try {
     const res = await fetch(`${SCHEDULING_SERVICE_URL}/api/v1/posts/${postId}/retry`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, ...(platforms && platforms.length > 0 ? { platforms } : {}) }),
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify(platforms && platforms.length > 0 ? { platforms } : {}),
     });
     let body: { success?: boolean; error?: string; code?: string; retried?: string[] } | null = null;
     try {

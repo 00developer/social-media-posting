@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCachedTeamRole = getCachedTeamRole;
 exports.setCachedTeamRole = setCachedTeamRole;
+exports.deleteCachedTeamRole = deleteCachedTeamRole;
 const upstash_1 = require("./upstash");
 const CACHE_TTL_SECONDS = 300; // 5 minutes default
 /**
@@ -30,5 +31,20 @@ async function setCachedTeamRole(teamId, userId, role, ttlSeconds = CACHE_TTL_SE
     }
     catch (err) {
         console.error('Redis set error:', err);
+    }
+}
+/**
+ * Clears a user's cached role for a team. Call this the moment a role actually changes or a member is removed -
+ * without it, the old role can keep being used for up to CACHE_TTL_SECONDS (5 min) after the change, since nothing
+ * else expires the cache early.
+ */
+async function deleteCachedTeamRole(teamId, userId) {
+    if (!upstash_1.upstashRedis)
+        return;
+    try {
+        await upstash_1.upstashRedis.del(`team_role:${teamId}:${userId}`);
+    }
+    catch (err) {
+        console.error('Redis delete error:', err);
     }
 }

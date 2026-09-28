@@ -29,6 +29,23 @@ describe('buildThreads', () => {
     expect(t.needsReply).toBe(true);
   });
 
+  it('ignores a spam reply when deciding whether a thread still needs an answer', () => {
+    const answered = buildThreads([
+      c('a'),
+      c('a1', { parent_external_id: 'a', is_own: true, commented_at: '2026-09-26T11:00:00Z' }),
+      c('a2', { parent_external_id: 'a', ai_status: 'skipped_spam', commented_at: '2026-09-26T12:00:00Z' }),
+    ]);
+    // Answered by us before the spam reply arrived - the spam reply shouldn't flip this back to "needs reply".
+    expect(answered[0].needsReply).toBe(false);
+
+    const stillWaiting = buildThreads([
+      c('b'),
+      c('b1', { parent_external_id: 'b', ai_status: 'skipped_spam', commented_at: '2026-09-26T11:00:00Z' }),
+    ]);
+    // Never answered - a spam reply doesn't count as an answer either.
+    expect(stillWaiting[0].needsReply).toBe(true);
+  });
+
   it('keeps platforms apart, keeps our own comments (not needing a reply) and skips orphan replies', () => {
     const threads = buildThreads([
       c('x', { platform: 'facebook' }),

@@ -4,19 +4,18 @@ export declare class AiNotConfiguredError extends Error {
     constructor();
 }
 export type Message = {
-    role: 'user' | 'assistant';
+    role: 'user' | 'assistant' | 'system';
     content: string | Array<{
         type: 'text';
         text: string;
     } | {
-        type: 'image';
-        source: {
-            type: 'url';
+        type: 'image_url';
+        image_url: {
             url: string;
         };
     }>;
 };
-/** Calls the Messages API and returns the concatenated text of the response. Throws AiNotConfiguredError if no key. */
+/** Calls Gemini's generateContent and returns the model's reply text. Throws AiNotConfiguredError if no key. */
 export declare function complete(opts: {
     model: string;
     system: string;

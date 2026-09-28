@@ -8,6 +8,7 @@ import { PostComposer } from '@/components/post/PostComposer';
 import { getPostStart } from '@/lib/calendarStatus';
 import { getFailedPlatforms, getFailureLines, getRetryNotes, isPostFailed, retryButtonLabel, retryFailedPost } from '@/lib/postRetry';
 import { POST_SERVICE_URL, SCHEDULING_SERVICE_URL } from '@/lib/apiUrls';
+import { authHeader } from '@/lib/supabase';
 
 export default function PostsPage() {
   const { user, activeTeam, posts, fetchTeamData } = useDashboard();
@@ -28,9 +29,8 @@ export default function PostsPage() {
     try {
       const res = await fetch(`${SCHEDULING_SERVICE_URL}/api/v1/schedules`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({
-          userId: user.id,
           postId: postId,
           platforms: platforms,
           scheduledAt: new Date().toISOString(),
@@ -53,7 +53,7 @@ export default function PostsPage() {
   const handleRetry = async (postId: string) => {
     if (!user || retryingPostId) return;
     setRetryingPostId(postId);
-    const result = await retryFailedPost(user.id, postId);
+    const result = await retryFailedPost(postId);
     if (!result.ok) alert(result.error);
     await fetchTeamData();
     setRetryingPostId(null);
@@ -63,7 +63,7 @@ export default function PostsPage() {
     if (!user || !activeTeam) return;
     if (!confirm('Are you sure you want to delete this post?')) return;
     try {
-      const res = await fetch(`${POST_SERVICE_URL}/api/v1/posts/${postId}?userId=${user.id}&teamId=${activeTeam.id}`, { method: 'DELETE' });
+      const res = await fetch(`${POST_SERVICE_URL}/api/v1/posts/${postId}?teamId=${activeTeam.id}`, { method: 'DELETE', headers: await authHeader() });
       if (res.ok) {
         fetchTeamData();
       } else {

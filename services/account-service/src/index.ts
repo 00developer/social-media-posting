@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
-import { getCachedTeamRole, setCachedTeamRole } from '@socialpush/shared';
+import { getCachedTeamRole, setCachedTeamRole, requireUser, requireEncryptionKey } from '@socialpush/shared';
 import { fetchAccountIdentity } from './identity';
 
 const PINTEREST_API_BASE = process.env.PINTEREST_API_BASE || 'https://api.pinterest.com';
@@ -26,8 +26,22 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const oauthStates = new Map<string, { codeVerifier: string, state: string, userId: string, teamId: string }>();
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
+const ENCRYPTION_KEY = requireEncryptionKey();
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
+
+// Reconnecting an already-connected account must replace its row, not add a second one (downstream code that
+// does `.eq('platform', ...).single()` would then crash on "multiple rows returned"). Matches on provider_account_id
+// when known (the platform-side page/channel/member id, captured via fetchAccountIdentity); falls back to just
+// team+platform when it isn't (a failed identity lookup, or a platform - like Pinterest below - that always
+// updates its own team+platform row). Mirrors the pattern LinkedIn's callback already used successfully.
+async function upsertSocialAccount(fields: Record<string, any> & { team_id: string; platform: string; provider_account_id?: string | null }) {
+  let query = supabase.from('social_accounts').select('id').eq('team_id', fields.team_id).eq('platform', fields.platform);
+  if (fields.provider_account_id) query = query.eq('provider_account_id', fields.provider_account_id);
+  const { data: existing } = await query.maybeSingle();
+  return existing
+    ? supabase.from('social_accounts').update(fields).eq('id', existing.id).select().single()
+    : supabase.from('social_accounts').insert(fields).select().single();
+}
 
 function encrypt(text: string) {
   const iv = crypto.randomBytes(16);
@@ -38,11 +52,18 @@ function encrypt(text: string) {
 }
 
 app.get('/api/v1/auth/:platform/url', async (req, res) => {
-  const { userId, teamId } = req.query; 
+  const { teamId } = req.query;
   const { platform } = req.params;
-  if (!userId || !teamId) return res.status(401).json({ error: 'Unauthorized or missing teamId' });
+  if (!teamId) return res.status(400).json({ error: 'Missing teamId' });
 
-  let role = await getCachedTeamRole(teamId as string, userId as string);
+  // The caller's identity comes from their verified Supabase session, never from the query string - otherwise
+  // anyone who learns a victim's userId+teamId could mint a real OAuth URL and link their own social account to
+  // the victim's team once they complete the consent screen.
+  const authed = await requireUser(req, supabase);
+  if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
+  const userId = authed.userId;
+
+  let role = await getCachedTeamRole(teamId as string, userId);
   let plan = 'free'; // default plan if not fetched from db
 
   if (!role) {
@@ -50,7 +71,7 @@ app.get('/api/v1/auth/:platform/url', async (req, res) => {
     if (member) {
       role = member.role;
       plan = (member.teams as any)?.plan || 'free';
-      await setCachedTeamRole(teamId as string, userId as string, role as string);
+      await setCachedTeamRole(teamId as string, userId, role as string);
     }
   }
 
@@ -260,7 +281,7 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
       const userData = await userRes.json();
       if (!userRes.ok) throw new Error(userData.message || 'Failed to fetch Pinterest profile');
       
-      const { data: saData, error: saError } = await supabase.from('social_accounts').insert({
+      const { data: saData, error: saError } = await upsertSocialAccount({
         user_id: session.userId,
         team_id: session.teamId,
         platform: 'pinterest',
@@ -270,7 +291,7 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
         refresh_token_encrypted: encRefresh,
         refresh_token_expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
         status: 'active'
-      }).select().single();
+      });
 
       if (saError) throw saError;
 
@@ -366,7 +387,7 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
     // Cosmetic only: a failed lookup just leaves these empty.
     const identity = plainAccessToken ? await fetchAccountIdentity(platform, plainAccessToken) : null;
 
-    await supabase.from('social_accounts').insert({
+    await upsertSocialAccount({
       user_id: session.userId,
       team_id: session.teamId,
       platform,
@@ -390,20 +411,24 @@ app.get('/api/v1/auth/:platform/callback', async (req, res) => {
 
 app.delete('/api/v1/auth/accounts/:id', async (req, res) => {
   const { id } = req.params;
-  const { teamId, userId } = req.query;
-  
-  if (!teamId || !userId) return res.status(401).json({ error: 'Missing credentials' });
+  const { teamId } = req.query;
+
+  if (!teamId) return res.status(400).json({ error: 'Missing teamId' });
+
+  const authed = await requireUser(req, supabase);
+  if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
+  const userId = authed.userId;
 
   // Verify role
-  let role = await getCachedTeamRole(teamId as string, userId as string);
+  let role = await getCachedTeamRole(teamId as string, userId);
   if (!role) {
     const { data: member } = await supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', userId).single();
     if (member) {
       role = member.role;
-      await setCachedTeamRole(teamId as string, userId as string, role as string);
+      await setCachedTeamRole(teamId as string, userId, role as string);
     }
   }
-  
+
   if (!role || role === 'viewer') return res.status(403).json({ error: 'Unauthorized' });
 
   // Delete account

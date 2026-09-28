@@ -12,6 +12,7 @@ import ffprobePath from 'ffprobe-static';
 import { getVideoFilter } from './videoFilter';
 import fs from 'fs';
 import os from 'os';
+import { requireUser } from '@socialpush/shared';
 
 ffmpeg.setFfmpegPath(ffmpegPath as string);
 ffmpeg.setFfprobePath(ffprobePath.path);
@@ -91,9 +92,13 @@ async function processVideo(inputBuffer: Buffer, platform: string, contentType: 
 }
 
 app.post('/api/v1/media/upload', upload.single('file'), async (req, res) => {
-  const { userId, platforms, contentType } = req.body; 
+  const { platforms, contentType } = req.body;
   const uploadedFile = req.file;
-  if (!uploadedFile || !userId || !platforms) return res.status(400).json({ error: 'Missing parameters' });
+  if (!uploadedFile || !platforms) return res.status(400).json({ error: 'Missing parameters' });
+
+  const authed = await requireUser(req, supabase);
+  if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
+  const userId = authed.userId;
 
   const platformList = platforms.split(',');
   const postId = crypto.randomUUID(); 
@@ -171,6 +176,9 @@ app.post('/api/v1/media/upload', upload.single('file'), async (req, res) => {
 app.post('/api/v1/media/transcode-preview', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Missing file' });
 
+  const authed = await requireUser(req, supabase);
+  if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
+
   const tempInput = path.join(os.tmpdir(), `in_${crypto.randomUUID()}.mp4`);
   const tempOutput = path.join(os.tmpdir(), `out_${crypto.randomUUID()}.mp4`);
 
@@ -219,9 +227,12 @@ app.post('/api/v1/media/transcode-preview', upload.single('file'), async (req, r
 // Stored under ai-context/ in the same public bucket the post media uses - these accumulate over time with no
 // cleanup job yet, which is fine at this scale but worth revisiting if storage usage becomes a concern.
 app.post('/api/v1/media/ai-thumbnail', upload.single('file'), async (req, res) => {
-  const { userId } = req.body;
   const uploadedFile = req.file;
-  if (!uploadedFile || !userId) return res.status(400).json({ error: 'Missing parameters' });
+  if (!uploadedFile) return res.status(400).json({ error: 'Missing parameters' });
+
+  const authed = await requireUser(req, supabase);
+  if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
+  const userId = authed.userId;
 
   const fileName = `ai-context/${userId}/${crypto.randomUUID()}.jpg`;
   try {

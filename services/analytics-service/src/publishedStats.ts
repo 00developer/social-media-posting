@@ -137,7 +137,10 @@ export async function syncPublishedPostStats(supabase: SupabaseClient, decrypt: 
 
   const accountCache = new Map<string, any>();
   const pageTokenCache = new Map<string, string | null>();
-  let linkedInDenied = false;
+  // Keyed per account (same key as accountCache below), not a single flag - otherwise the first LinkedIn account in
+  // this run that lacks r_member_postAnalytics would skip every OTHER LinkedIn account's stats too, even ones that
+  // do have the permission.
+  const linkedInDenied = new Set<string>();
   let synced = 0;
 
   for (const row of rows) {
@@ -162,10 +165,10 @@ export async function syncPublishedPostStats(supabase: SupabaseClient, decrypt: 
       } else if (row.platform === 'instagram') {
         stats = await fetchInstagramStats(row.external_id, token);
       } else if (row.platform === 'linkedin') {
-        if (linkedInDenied) continue;
+        if (linkedInDenied.has(key)) continue;
         stats = await fetchLinkedInStats(row.external_id, token);
         if (!stats) {
-          linkedInDenied = true;
+          linkedInDenied.add(key);
           if (!linkedInDeniedLogged) {
             linkedInDeniedLogged = true;
             console.warn('[AnalyticsService] LinkedIn denied post analytics (the app needs r_member_postAnalytics); skipping LinkedIn stats.');

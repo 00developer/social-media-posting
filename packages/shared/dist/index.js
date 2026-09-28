@@ -41,3 +41,5 @@ function getNotificationsQueue(connection) {
 __exportStar(require("./upstash"), exports);
 __exportStar(require("./cache"), exports);
 __exportStar(require("./ratelimit"), exports);
+__exportStar(require("./auth"), exports);
+__exportStar(require("./secrets"), exports);

@@ -174,20 +174,49 @@ export async function syncComments(ctx: CommentsContext, opts: { teamId?: string
       else if (ref.platform === 'instagram') comments = await readInstagram(ref.external_id, account, token);
       else if (ref.platform === 'threads') comments = await readThreads(ref.external_id, account, token);
       else if (ref.platform === 'youtube') comments = await readYoutube(ctx, ref.external_id, account);
-      if (comments.length === 0) continue;
 
-      const rows = comments.map((c) => ({
-        team_id: ref.team_id, user_id: ref.user_id, post_id: ref.post_id, account_id: account.id, platform: ref.platform,
-        external_post_id: ref.external_id, external_comment_id: c.id, parent_external_id: c.parent,
-        author_name: c.authorName, author_id: c.authorId, text: c.text, commented_at: c.at, is_own: c.own,
-      }));
-      const { error } = await ctx.supabase.from('post_comments').upsert(rows, { onConflict: 'platform,external_comment_id' });
-      if (error) {
-        // The table appears once the migration has been applied.
-        if (error.code !== 'PGRST205') console.warn('[Comments] Could not save comments:', error.message);
-        return saved;
+      if (comments.length > 0) {
+        // Read-side comments we don't already have: the ones worth a notification, checked before the upsert
+        // below overwrites the "new" distinction. Own comments (our replies) never notify.
+        const { data: already } = await ctx.supabase.from('post_comments').select('external_comment_id')
+          .eq('platform', ref.platform).in('external_comment_id', comments.map((c) => c.id));
+        const knownIds = new Set((already || []).map((r: any) => r.external_comment_id));
+        const freshReaderComments = comments.filter((c) => !c.own && !knownIds.has(c.id));
+
+        const rows = comments.map((c) => ({
+          team_id: ref.team_id, user_id: ref.user_id, post_id: ref.post_id, account_id: account.id, platform: ref.platform,
+          external_post_id: ref.external_id, external_comment_id: c.id, parent_external_id: c.parent,
+          author_name: c.authorName, author_id: c.authorId, text: c.text, commented_at: c.at, is_own: c.own,
+        }));
+        const { error } = await ctx.supabase.from('post_comments').upsert(rows, { onConflict: 'platform,external_comment_id' });
+        if (error) {
+          // The table appears once the migration has been applied.
+          if (error.code !== 'PGRST205') console.warn('[Comments] Could not save comments:', error.message);
+          return saved;
+        }
+        saved += rows.length;
+
+        if (freshReaderComments.length > 0) {
+          const notifRows = freshReaderComments.map((c) => ({
+            user_id: ref.user_id,
+            type: 'comment',
+            message: `${c.authorName} ${c.parent ? 'replied' : 'commented'} on your ${ref.platform} post: "${c.text.slice(0, 140)}${c.text.length > 140 ? '…' : ''}"`,
+            read: false,
+          }));
+          const { error: notifError } = await ctx.supabase.from('notifications').insert(notifRows);
+          if (notifError) console.warn('[Comments] Could not create comment notifications:', notifError.message);
+        }
       }
-      saved += rows.length;
+
+      // Prune comments we stored earlier for this post that the platform no longer returns (deleted by the
+      // reader, or by us) - this is the only place a deletion on the platform ever reaches our table. Subject to
+      // the readers' own pagination caps above (50 top-level / 25 replies each): a post with more live comments
+      // than that could have older ones wrongly pruned, but that's fine at this app's scale.
+      const keepIds = comments.map((c) => `"${c.id.replace(/"/g, '\\"')}"`);
+      let del = ctx.supabase.from('post_comments').delete().eq('post_id', ref.post_id).eq('platform', ref.platform);
+      if (keepIds.length > 0) del = del.not('external_comment_id', 'in', `(${keepIds.join(',')})`);
+      const { error: pruneError } = await del;
+      if (pruneError && pruneError.code !== 'PGRST205') console.warn('[Comments] Could not prune deleted comments:', pruneError.message);
     } catch (err: any) {
       // 400/401/403 from the platform = the permission for comments was not granted (or the account must reconnect)
       if ([400, 401, 403].includes(err.status) || /permission|scope|OAuth/i.test(err.message || '')) {

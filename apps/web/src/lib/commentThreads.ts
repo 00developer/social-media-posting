@@ -54,9 +54,13 @@ export function buildThreads(rows: CommentRow[]): Thread[] {
   }
   for (const t of threads.values()) {
     t.replies.sort((a, b) => time(a) - time(b));
-    const last = t.replies.length ? t.replies[t.replies.length - 1] : t.root;
+    // A reply the AI marked as spam doesn't count as "the last message" - otherwise a spam reply buried inside an
+    // otherwise-answered thread would flip it back to "needs reply" (spam is never worth replying to), and it
+    // would never show under the "Spam" tab either, since that only looks at the thread's root.
+    const notSpam = [t.root, ...t.replies].filter((r) => r.ai_status !== 'skipped_spam');
+    const last = notSpam.length ? notSpam[notSpam.length - 1] : t.root;
     t.needsReply = !last.is_own;
-    t.lastActivity = time(last);
+    t.lastActivity = time(t.replies.length ? t.replies[t.replies.length - 1] : t.root);
   }
   return [...threads.values()].sort((a, b) => b.lastActivity - a.lastActivity);
 }

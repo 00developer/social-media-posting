@@ -27,3 +27,17 @@ export async function setCachedTeamRole(teamId: string, userId: string, role: st
     console.error('Redis set error:', err);
   }
 }
+
+/**
+ * Clears a user's cached role for a team. Call this the moment a role actually changes or a member is removed -
+ * without it, the old role can keep being used for up to CACHE_TTL_SECONDS (5 min) after the change, since nothing
+ * else expires the cache early.
+ */
+export async function deleteCachedTeamRole(teamId: string, userId: string): Promise<void> {
+  if (!upstashRedis) return;
+  try {
+    await upstashRedis.del(`team_role:${teamId}:${userId}`);
+  } catch (err) {
+    console.error('Redis delete error:', err);
+  }
+}

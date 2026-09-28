@@ -5,7 +5,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { TwitterApi } from 'twitter-api-v2';
 import { createClient } from '@supabase/supabase-js';
-import { publishRateLimiter } from '@socialpush/shared';
+import { publishRateLimiter, requireEncryptionKey } from '@socialpush/shared';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 const app = express();
@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
+const ENCRYPTION_KEY = requireEncryptionKey();
 // Server-to-server call, not exposed to the browser - a plain env var (not NEXT_PUBLIC_*) is enough.
 const ACCOUNT_SERVICE_URL = process.env.ACCOUNT_SERVICE_URL || 'http://localhost:3001';
 
@@ -34,9 +34,30 @@ interface PlatformAdapter {
 class TwitterAdapter implements PlatformAdapter {
   async publish(post: any, account: any, decryptedToken: string, contentType?: string, job?: any) {
     const client = new TwitterApi(decryptedToken);
-    // Note: Twitter API requires media ID upload for attachments. 
-    // Kept simple for text MVP execution to prove adapter flow.
-    await client.v2.tweet(post.content); 
+
+    let mediaId: string | null = null;
+    try {
+      const media = JSON.parse(post.media_url || '{}');
+      const mediaUrl = media.twitter || null;
+      if (mediaUrl) {
+        const mediaRes = await fetch(mediaUrl);
+        if (!mediaRes.ok) throw new Error(`Failed to fetch media from ${mediaUrl}`);
+        const buffer = Buffer.from(await mediaRes.arrayBuffer());
+        const mime = mediaRes.headers.get('content-type') || '';
+        const isVideo = mime.startsWith('video/');
+        mediaId = await client.v2.uploadMedia(buffer, {
+          media_type: isVideo ? 'video/mp4' : (mime.includes('png') ? 'image/png' : 'image/jpeg'),
+          media_category: isVideo ? 'tweet_video' : 'tweet_image',
+        });
+      }
+    } catch (e: any) {
+      // Attaching media should never block the tweet itself - post text-only rather than fail the whole job.
+      console.warn(`[TwitterAdapter] Could not attach media for post ${post.id}, tweeting text only: ${e.message}`);
+      mediaId = null;
+    }
+
+    const tweet = await client.v2.tweet(post.content, mediaId ? { media: { media_ids: [mediaId] } } : undefined);
+    await recordPublishedPost(post, 'twitter', tweet.data?.id, 'post');
     console.log(`[TwitterAdapter] Published post ${post.id}`);
   }
 }
@@ -97,9 +118,12 @@ class FacebookAdapter implements PlatformAdapter {
     
     const pages = await getFacebookPages(decryptedToken);
     if (!pages || pages.length === 0) throw new Error("No Facebook pages found for this user.");
-    
-    // Default to the first page for automated flow
-    const page = pages[0];
+
+    // Facebook's /me/accounts does not guarantee stable ordering between calls, so blindly using pages[0] could
+    // silently post to a different Page than the one shown when the user connected. Prefer the exact Page id
+    // captured at connect time (account.provider_account_id, see account-service/src/identity.ts); only fall back
+    // to the first page for accounts connected before that was recorded.
+    const page = (account.provider_account_id && pages.find((p: any) => p.id === account.provider_account_id)) || pages[0];
     const pageToken = page.access_token;
     const pageId = page.id;
     
@@ -211,8 +235,10 @@ class InstagramAdapter implements PlatformAdapter {
     
     const pages = await getFacebookPages(decryptedToken);
     if (!pages || pages.length === 0) throw new Error("No Facebook pages found.");
-    
-    const pageWithIg = pages.find((p: any) => p.instagram_business_account);
+
+    // Same reasoning as FacebookAdapter above: prefer the exact IG business account id captured at connect time.
+    const pageWithIg = (account.provider_account_id && pages.find((p: any) => p.instagram_business_account?.id === account.provider_account_id))
+      || pages.find((p: any) => p.instagram_business_account);
     if (!pageWithIg) throw new Error("No Instagram Business account linked to any of your Facebook pages.");
     
     const igAccountId = pageWithIg.instagram_business_account.id;
@@ -821,6 +847,19 @@ app.post('/api/v1/publish/:jobId', async (req, res) => {
   
   const { data: job, error: jobError } = await supabase.from('publish_jobs').select('*').eq('id', jobId).single();
   if (jobError || !job) return res.status(404).json({ error: 'Job not found' });
+
+  // Idempotency guard: a worker crash or BullMQ stalled-job redelivery can call this endpoint again for a job
+  // that already published successfully (the actual platform call and recordPublishedPost() below both finished,
+  // but the worker died before it could mark the job 'completed'). Without this check that replay would post the
+  // same content to the platform a second time. `published_posts` is the source of truth for "did this post_id +
+  // platform combination already go out", since adapter.publish() only records it after a real success.
+  if (job.status === 'completed') {
+    return res.json({ success: true, message: `Already published to ${job.platform} (job already completed).` });
+  }
+  const { data: already } = await supabase.from('published_posts').select('id').eq('post_id', job.post_id).eq('platform', job.platform).maybeSingle();
+  if (already) {
+    return res.json({ success: true, message: `Already published to ${job.platform} (found an existing record).` });
+  }
 
   // Rate Limiting Check
   if (publishRateLimiter) {

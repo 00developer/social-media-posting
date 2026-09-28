@@ -16,6 +16,7 @@ import {
   type EditablePostRecord,
 } from '@/lib/calendarEdit';
 import { POST_SERVICE_URL } from '@/lib/apiUrls';
+import { authHeader } from '@/lib/supabase';
 
 export type { EditablePostRecord };
 
@@ -70,7 +71,7 @@ export function EditPostModal({ post, userId, teamId, isViewer, onClose, onSaved
     setRetrying(true);
     setError(null);
     setRetriedNotice(null);
-    const result = await retryFailedPost(userId, post.id, failedPlatforms);
+    const result = await retryFailedPost(post.id, failedPlatforms);
     setRetrying(false);
     if (result.ok) {
       setRetriedNotice(`Retrying ${result.retried.join(', ')}. The status updates here and in the calendar once it has run.`);
@@ -88,8 +89,8 @@ export function EditPostModal({ post, userId, teamId, isViewer, onClose, onSaved
     try {
       const res = await fetch(`${POST_SERVICE_URL}/api/v1/posts/${post.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, teamId, content: draft }),
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ teamId, content: draft }),
       });
       let body: { success?: boolean; error?: string } | null = null;
       try {

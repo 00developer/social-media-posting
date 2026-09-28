@@ -4,11 +4,12 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import { Queue, Worker, Job } from 'bullmq';
-import { getRedisConnection, upstashRedis } from '@socialpush/shared';
+import { getRedisConnection, upstashRedis, requireEncryptionKey } from '@socialpush/shared';
 import { createClient } from '@supabase/supabase-js';
 import { syncComments, replyToComment, type CommentsContext } from './comments';
 import { syncPublishedPostStats, syncThreadsStats, backfillAnalyticsTeamIds, recordAnalyticsHistory } from './publishedStats';
 import { suggestReplies } from './aiComments';
+import { cleanupOldAiContextUploads } from './cleanup';
 import { classifyComment, generateReply, checkAndRecordUsage, AiNotConfiguredError } from '@socialpush/ai';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
@@ -35,7 +36,7 @@ process.on('unhandledRejection', (err: any) => {
   console.error('[Analytics] Unhandled Rejection:', err.message || err);
 });
 const redisConnection = getRedisConnection(process.env.REDIS_URL || 'redis://localhost:6379');
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
+const ENCRYPTION_KEY = requireEncryptionKey();
 // Server-to-server call, not exposed to the browser - a plain env var (not NEXT_PUBLIC_*) is enough.
 const ACCOUNT_SERVICE_URL = process.env.ACCOUNT_SERVICE_URL || 'http://localhost:3001';
 
@@ -165,6 +166,8 @@ app.listen(PORT, () => {
 });
 
 let pinterestSandboxLogged = false;
+let lastAiCleanupAt = 0;
+const AI_CLEANUP_INTERVAL_MS = 24 * 3600 * 1000;
 
 const ANALYTICS_QUEUE_NAME = 'analytics-queue';
 const analyticsQueue = new Queue(ANALYTICS_QUEUE_NAME, { connection: redisConnection });
@@ -184,7 +187,13 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
   console.log(`[AnalyticsService] Running analytics sync...`);
   
   try {
+    // Each numbered step below runs in its own try/catch: previously one outer try/catch wrapped the whole
+    // pipeline, so an error in an early step (e.g. step 1's Redis scan) silently skipped every later step for
+    // that whole 5-minute cycle - including comment syncing and AI drafting (steps 8-9), which had nothing to do
+    // with the failure. Each step now fails independently and the rest of the run still happens.
+
     // 1. Sync real-time events from Redis
+    try {
     let allKeys: string[] = [];
     if (upstashRedis) {
       let cursor = 0;
@@ -268,8 +277,12 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
       }
       console.log(`[AnalyticsService] Successfully synced redis analytics for ${Object.keys(aggregated).length} posts.`);
     }
+    } catch (err: any) {
+      console.error('[AnalyticsService] Step 1 (Redis event sync) failed:', err.message);
+    }
 
     // 2. Sync YouTube Analytics via API
+    try {
     const { data: ytSessions } = await supabase.from('youtube_upload_sessions')
       .select('post_id, user_id, video_id')
       .eq('status', 'completed')
@@ -352,8 +365,12 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
       }
       console.log(`[AnalyticsService] Successfully synced YouTube API stats for ${ytSessions.length} videos.`);
     }
+    } catch (err: any) {
+      console.error('[AnalyticsService] Step 2 (YouTube stats sync) failed:', err.message);
+    }
 
     // 3. Sync Pinterest Analytics via API
+    try {
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
     // Pinterest refuses analytics requests in its sandbox ("This endpoint does not support sandbox requests"),
@@ -437,26 +454,65 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
       }
       console.log(`[AnalyticsService] Successfully synced Pinterest API stats for ${pinterestPins.length} pins.`);
     }
+    } catch (err: any) {
+      console.error('[AnalyticsService] Step 3 (Pinterest stats sync) failed:', err.message);
+    }
 
     // 4. Facebook / Instagram / LinkedIn stats for the posts whose platform ids the publisher saved
-    await syncPublishedPostStats(supabase, decrypt);
+    try {
+      await syncPublishedPostStats(supabase, decrypt);
+    } catch (err: any) {
+      console.error('[AnalyticsService] Step 4 (Facebook/Instagram/LinkedIn stats sync) failed:', err.message);
+    }
 
     // 5. Threads stats (by saved post id; older posts are matched by their text once and then saved)
-    await syncThreadsStats(supabase, decrypt);
+    try {
+      await syncThreadsStats(supabase, decrypt);
+    } catch (err: any) {
+      console.error('[AnalyticsService] Step 5 (Threads stats sync) failed:', err.message);
+    }
 
     // 6. Make sure every analytics row carries its team_id so the dashboard can load it
-    await backfillAnalyticsTeamIds(supabase);
+    try {
+      await backfillAnalyticsTeamIds(supabase);
+    } catch (err: any) {
+      console.error('[AnalyticsService] Step 6 (team_id backfill) failed:', err.message);
+    }
 
     // 7. Append the latest numbers to the history that feeds the Analytics page charts
-    await recordAnalyticsHistory(supabase);
+    try {
+      await recordAnalyticsHistory(supabase);
+    } catch (err: any) {
+      console.error('[AnalyticsService] Step 7 (analytics history) failed:', err.message);
+    }
 
     // 8. Comments on published posts (Facebook, Instagram, Threads, YouTube)
-    await syncComments(commentsCtx);
+    try {
+      await syncComments(commentsCtx);
+    } catch (err: any) {
+      console.error('[AnalyticsService] Step 8 (comment sync) failed:', err.message);
+    }
 
     // 9. AI Assistant: classify new comments and draft replies for the ones worth answering
-    const aiStats = await suggestReplies(commentsCtx);
-    if (aiStats.suggested || aiStats.skipped || aiStats.flagged) {
-      console.log(`[AI] Comments: ${aiStats.suggested} suggested, ${aiStats.skipped} spam skipped, ${aiStats.flagged} flagged, ${aiStats.autoSent} auto-sent.`);
+    try {
+      const aiStats = await suggestReplies(commentsCtx);
+      if (aiStats.suggested || aiStats.skipped || aiStats.flagged) {
+        console.log(`[AI] Comments: ${aiStats.suggested} suggested, ${aiStats.skipped} spam skipped, ${aiStats.flagged} flagged, ${aiStats.autoSent} auto-sent.`);
+      }
+    } catch (err: any) {
+      console.error('[AnalyticsService] Step 9 (AI comment suggestions) failed:', err.message);
+    }
+
+    // 10. Delete AI-context images older than 7 days (not time-sensitive, so this only actually runs once a day
+    // rather than every 5-minute tick - no point re-listing storage that often for what's usually nothing to do).
+    if (Date.now() - lastAiCleanupAt > AI_CLEANUP_INTERVAL_MS) {
+      lastAiCleanupAt = Date.now();
+      try {
+        const deleted = await cleanupOldAiContextUploads(supabase);
+        if (deleted > 0) console.log(`[Cleanup] Deleted ${deleted} stale ai-context upload(s).`);
+      } catch (err: any) {
+        console.error('[AnalyticsService] Step 10 (ai-context cleanup) failed:', err.message);
+      }
     }
 
   } catch (err: any) {

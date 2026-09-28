@@ -23,3 +23,5 @@ export function getNotificationsQueue(connection: Redis) {
 export * from './upstash';
 export * from './cache';
 export * from './ratelimit';
+export * from './auth';
+export * from './secrets';

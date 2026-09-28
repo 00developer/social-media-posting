@@ -3,6 +3,7 @@
 import { useDashboard } from '@/components/DashboardProvider';
 import { ACCOUNT_SERVICE_URL } from '@/lib/apiUrls';
 import { getAccountLabel } from '@/lib/accountLabel';
+import { authHeader } from '@/lib/supabase';
 
 export default function AccountsPage() {
   const { user, activeTeam, accounts } = useDashboard();
@@ -17,7 +18,9 @@ export default function AccountsPage() {
     const popup = window.open('', '_blank', 'width=600,height=600');
     
     try {
-      const res = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/${platform}/url?userId=${user.id}&teamId=${activeTeam.id}`);
+      const res = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/${platform}/url?teamId=${activeTeam.id}`, {
+        headers: await authHeader(),
+      });
       const data = await res.json();
       if (data.url) {
         if (popup) {
@@ -49,8 +52,9 @@ export default function AccountsPage() {
     if (!user || !activeTeam) return;
     if (!confirm('Are you sure you want to disconnect this account?')) return;
     try {
-      const res = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/accounts/${id}?userId=${user.id}&teamId=${activeTeam.id}`, {
-        method: 'DELETE'
+      const res = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/accounts/${id}?teamId=${activeTeam.id}`, {
+        method: 'DELETE',
+        headers: await authHeader(),
       });
       if (res.ok) {
         fetchTeamData();
@@ -99,7 +103,7 @@ export default function AccountsPage() {
                   <div>
                     <h4 className="font-semibold text-gray-900 capitalize">{acc.platform || 'Unknown'}</h4>
                     {label ? (
-                      <p className="text-sm text-indigo-700 font-semibold truncate max-w-[14rem]" title={label}>{label}</p>
+                      <p className="text-sm text-indigo-700 font-semibold truncate max-w-56" title={label}>{label}</p>
                     ) : (
                       <p className="text-xs text-gray-500 font-medium">Active Connection</p>
                     )}

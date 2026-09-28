@@ -1,10 +1,11 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useRef, useState, ReactNode, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, authHeader } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import { NOTIFICATION_LIMIT, NOTIFICATION_POLL_MS } from '@/lib/notifications';
+import { TEAM_SERVICE_URL } from '@/lib/apiUrls';
 
 export type Team = { id: string; name?: string; plan?: string; role?: string; ai_auto_reply_enabled?: boolean; [key: string]: unknown };
 export type SocialAccount = { id: string; platform?: string; [key: string]: unknown };
@@ -119,8 +120,20 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     if (!user || ids.length === 0) return;
     ids.forEach((id) => locallyRead.current.add(id));
     setNotifications((prev) => prev.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n)));
-    const { error } = await supabase.from('notifications').update({ read: true }).in('id', ids).eq('user_id', user.id);
-    if (error) console.error('Could not mark notifications as read (is the UPDATE policy applied?):', error.message);
+    // Goes through team-service (service role), not a direct client-side Supabase update: `notifications` has no
+    // working UPDATE RLS policy, so that write was silently affecting 0 rows - same bug class as the teams
+    // settings fix elsewhere in this file's history.
+    try {
+      const res = await fetch(`${TEAM_SERVICE_URL}/api/v1/notifications/read`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) console.error('Could not mark notifications as read:', data.error || res.status);
+    } catch (err) {
+      console.error('Could not mark notifications as read:', err);
+    }
   }, [user]);
 
   useEffect(() => {

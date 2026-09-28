@@ -8,3 +8,5 @@ export declare function getNotificationsQueue(connection: Redis): Queue<any, any
 export * from './upstash';
 export * from './cache';
 export * from './ratelimit';
+export * from './auth';
+export * from './secrets';

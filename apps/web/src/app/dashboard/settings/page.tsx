@@ -3,12 +3,13 @@
 import { useState } from 'react';
 import { useDashboard, type Team } from '@/components/DashboardProvider';
 import { TEAM_SERVICE_URL } from '@/lib/apiUrls';
+import { authHeader } from '@/lib/supabase';
 
-async function updateTeamSettings(teamId: string, requesterId: string, updates: { name?: string; aiAutoReplyEnabled?: boolean }) {
+async function updateTeamSettings(teamId: string, updates: { name?: string; aiAutoReplyEnabled?: boolean }) {
   const res = await fetch(`${TEAM_SERVICE_URL}/api/v1/teams/${teamId}/settings`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...updates, requesterId }),
+    headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+    body: JSON.stringify(updates),
   });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.error || 'Could not save this setting.');
@@ -29,7 +30,7 @@ function TeamNameEditor({ team, userId, fetchUserTeams }: { team: Team; userId: 
       // RLS policy was silently matching 0 rows for a real, correctly-owner-matching browser session (PostgREST
       // then reports "Cannot coerce the result to a single JSON object" once the row is asked for back). Routing
       // through the backend - the same path Invite and Billing already use - sidesteps that entirely.
-      await updateTeamSettings(team.id, userId, { name: newName });
+      await updateTeamSettings(team.id, { name: newName });
       await fetchUserTeams(userId);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error renaming team');
@@ -69,7 +70,7 @@ export default function SettingsPage() {
     setSavingAutoReply(true);
     try {
       // See the same note in handleRenameTeam above - goes through team-service, not a direct client update.
-      await updateTeamSettings(activeTeam.id, user.id, { aiAutoReplyEnabled: enabled });
+      await updateTeamSettings(activeTeam.id, { aiAutoReplyEnabled: enabled });
       await fetchUserTeams(user.id);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Error updating the AI auto-reply setting');
@@ -83,8 +84,8 @@ export default function SettingsPage() {
     try {
       const res = await fetch(`${TEAM_SERVICE_URL}/api/v1/teams/${activeTeam.id}/invite`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole, inviterId: user.id })
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ email: inviteEmail, role: inviteRole })
       });
       const data = await res.json();
       if (data.success) {
@@ -104,8 +105,8 @@ export default function SettingsPage() {
     try {
       const res = await fetch(`${TEAM_SERVICE_URL}/api/v1/teams/${activeTeam.id}/billing`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: newPlan, requesterId: user.id })
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ plan: newPlan })
       });
       const data = await res.json();
       if (data.success) {

@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+
+vi.mock('@/lib/supabase', () => ({ authHeader: async () => ({ Authorization: 'Bearer test-token' }) }));
+
 import { EditPostModal, type EditablePostRecord } from './EditPostModal';
 
 // Server-side render of each state. This proves what the modal shows for a given post (status list, gating,

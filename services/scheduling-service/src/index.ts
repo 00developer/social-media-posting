@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
-import { getRedisConnection, getQueue } from '@socialpush/shared';
+import { getRedisConnection, getQueue, requireUser } from '@socialpush/shared';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 const app = express();
@@ -23,11 +23,15 @@ const PUBLISH_JOB_OPTIONS = {
 };
 
 app.post('/api/v1/schedules', async (req, res) => {
-  const { userId, postId, platforms, scheduledAt, timezone, contentType } = req.body;
-  
-  if (!userId || !postId || !platforms || !platforms.length || !scheduledAt || !timezone) {
+  const { postId, platforms, scheduledAt, timezone, contentType } = req.body;
+
+  if (!postId || !platforms || !platforms.length || !scheduledAt || !timezone) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
+
+  const authed = await requireUser(req, supabase);
+  if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
+  const userId = authed.userId;
 
   const { data: post } = await supabase.from('posts').select('team_id').eq('id', postId).single();
   if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -43,17 +47,23 @@ app.post('/api/v1/schedules', async (req, res) => {
     return res.status(400).json({ error: 'Invalid or past date' });
   }
 
+  // Tracks what this request has created so far, so a failure partway through (e.g. platform 3 of 5) can be
+  // rolled back cleanly instead of leaving platforms 1-2 live-scheduled while the client sees a 500 and the post
+  // stuck un-scheduled - a retry from the client would then re-queue 1-2 a second time on top of the surviving rows.
+  const createdSchedules: string[] = [];
+  const createdJobs: string[] = [];
   try {
     for (const platform of platforms) {
       // Insert schedule record
-      const { error: scheduleError } = await supabase.from('schedules').insert({
+      const { data: scheduleRow, error: scheduleError } = await supabase.from('schedules').insert({
         post_id: postId,
         user_id: userId,
         platform,
         scheduled_at: scheduledDate.toISOString(),
         timezone
-      });
+      }).select().single();
       if (scheduleError) throw scheduleError;
+      createdSchedules.push(scheduleRow.id);
 
       // Insert publish job record
       const { data: jobRecord, error: jobError } = await supabase.from('publish_jobs').insert({
@@ -64,6 +74,7 @@ app.post('/api/v1/schedules', async (req, res) => {
         content_type: contentType || 'post'
       }).select().single();
       if (jobError) throw jobError;
+      createdJobs.push(jobRecord.id);
 
       // Add to BullMQ
       const delay = scheduledDate.getTime() - Date.now();
@@ -81,6 +92,11 @@ app.post('/api/v1/schedules', async (req, res) => {
     res.json({ success: true, message: `Post scheduled for ${platforms.length} platforms` });
   } catch (err: any) {
     console.error(err);
+    for (const jobId of createdJobs) {
+      try { const queued = await publishQueue.getJob(jobId); await queued?.remove(); } catch { /* already running: harmless once its row is gone */ }
+    }
+    if (createdJobs.length > 0) await supabase.from('publish_jobs').delete().in('id', createdJobs);
+    if (createdSchedules.length > 0) await supabase.from('schedules').delete().in('id', createdSchedules);
     res.status(500).json({ error: err.message });
   }
 });
@@ -104,14 +120,18 @@ function latestJobsPerPlatform<T extends { platform?: string | null; created_at?
 // queued with a new BullMQ id; the old failed rows stay as history.
 app.post('/api/v1/posts/:postId/retry', async (req, res) => {
   const { postId } = req.params;
-  const { userId, platforms } = req.body ?? {};
+  const { platforms } = req.body ?? {};
 
-  if (!UUID_RE.test(postId) || typeof userId !== 'string' || !UUID_RE.test(userId)) {
+  if (!UUID_RE.test(postId)) {
     return res.status(400).json({ error: 'Missing or invalid id' });
   }
   if (platforms !== undefined && (!Array.isArray(platforms) || platforms.some((p: unknown) => typeof p !== 'string'))) {
     return res.status(400).json({ error: 'platforms must be an array of strings' });
   }
+
+  const authed = await requireUser(req, supabase);
+  if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
+  const userId = authed.userId;
 
   const { data: post, error: postError } = await supabase.from('posts').select('id, team_id').eq('id', postId).maybeSingle();
   if (postError) return res.status(500).json({ error: postError.message });

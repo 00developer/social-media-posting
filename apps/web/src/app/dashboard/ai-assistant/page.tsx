@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDashboard } from '@/components/DashboardProvider';
-import { supabase } from '@/lib/supabase';
+import { supabase, authHeader } from '@/lib/supabase';
 import { MEDIA_SERVICE_URL, POST_SERVICE_URL } from '@/lib/apiUrls';
 import { setAiDraftHandoff } from '@/lib/aiDraftHandoff';
 
@@ -40,8 +40,7 @@ export default function AiAssistantPage() {
         try {
           const formData = new FormData();
           formData.append('file', mediaFile);
-          formData.append('userId', user.id);
-          const uploadRes = await fetch(`${MEDIA_SERVICE_URL}/api/v1/media/ai-thumbnail`, { method: 'POST', body: formData });
+          const uploadRes = await fetch(`${MEDIA_SERVICE_URL}/api/v1/media/ai-thumbnail`, { method: 'POST', headers: await authHeader(), body: formData });
           const uploadData = await uploadRes.json();
           if (uploadRes.ok && uploadData.success) imageUrl = uploadData.url;
           else console.warn('AI thumbnail upload failed, generating from the prompt alone:', uploadData.error);
@@ -52,8 +51,8 @@ export default function AiAssistantPage() {
 
       const res = await fetch(`${POST_SERVICE_URL}/api/v1/ai/caption`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, teamId: activeTeam.id, prompt: prompt.trim(), imageUrl }),
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ teamId: activeTeam.id, prompt: prompt.trim(), imageUrl }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Could not generate a result.');

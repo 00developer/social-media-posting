@@ -27,7 +27,7 @@ async function generateCaption(opts) {
 async function generateCaptionFromImage(opts) {
     const content = [
         { type: 'text', text: `Prompt: ${opts.prompt}${opts.platform ? `\nTarget platform: ${opts.platform}` : ''}` },
-        { type: 'image', source: { type: 'url', url: opts.imageUrl } },
+        { type: 'image_url', image_url: { url: opts.imageUrl } },
     ];
     const text = await (0, client_1.complete)({ model: client_1.GENERATE_MODEL, system: CAPTION_SYSTEM, messages: [{ role: 'user', content }], maxTokens: 500 });
     const result = (0, client_1.parseJson)(text);

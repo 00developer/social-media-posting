@@ -14,13 +14,18 @@ async function usageThisMonth(supabase, teamId) {
 }
 /**
  * Checks the team is under the safety ceiling and, if so, records one generation. Call this right BEFORE making the
- * Anthropic API call (not after), so a crash never leaves usage under-counted while still spending money.
+ * Gemini API call (not after), so a crash never leaves usage under-counted while still spending money.
  * Returns { allowed: false } instead of throwing, so callers can show a friendly "quota reached" message.
+ *
+ * The check-and-insert happens atomically inside the `try_record_ai_usage` Postgres function (an advisory
+ * transaction lock serializes concurrent callers for the same team), not as two separate round trips here -
+ * otherwise two requests arriving close together could both read "under the ceiling" and both insert, together
+ * going over it.
  */
 async function checkAndRecordUsage(supabase, teamId, kind) {
+    const { data: allowed, error } = await supabase.rpc('try_record_ai_usage', { p_team_id: teamId, p_kind: kind, p_ceiling: SAFETY_CEILING });
+    if (error)
+        throw new Error(error.message);
     const used = await usageThisMonth(supabase, teamId);
-    if (used >= SAFETY_CEILING)
-        return { allowed: false, usedThisMonth: used };
-    await supabase.from('ai_usage').insert({ team_id: teamId, kind });
-    return { allowed: true, usedThisMonth: used + 1 };
+    return { allowed: !!allowed, usedThisMonth: used };
 }

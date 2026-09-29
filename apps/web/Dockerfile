@@ -26,8 +26,12 @@ WORKDIR /app
 # Whole repo, not just apps/web/: this is an npm workspace, so `npm install` resolves every
 # workspace together. No package-lock.json is committed (see .gitignore - a Windows-generated one
 # broke a previous Vercel build), so this is `npm install`, not `npm ci`.
+# --legacy-peer-deps: the base image's bundled npm (10.8.2) has a known Arborist crash
+# ("Cannot read properties of null (reading 'edgesOut')") when resolving certain peer-dependency
+# conflicts (e.g. a library whose peerDependencies still pin React 18 under React 19) - this
+# doesn't reproduce with newer npm (11.x), which is what local dev machines run.
 COPY . .
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY

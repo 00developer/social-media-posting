@@ -8,13 +8,17 @@ This README describes the **actual current state** of the project (verified by r
 
 This project is not yet in a state where a stranger can open a deployed link and fully use it end-to-end. Specifically:
 
-1. **The frontend's API calls are hardcoded to `http://localhost:<port>`.** Deploying `apps/web` to Vercel makes the *pages* load, but every API call (create post, connect account, etc.) still tries to reach `localhost` — which doesn't exist on Vercel's servers. This must be replaced with a real backend URL (env var) before a Vercel deployment is actually usable.
-2. **Vercel cannot host the backend.** Nine Node/Express services + a persistent BullMQ worker make up the backend (see [Architecture](#architecture--tech-stack)); several of them are always-on processes, which serverless platforms like Vercel don't support. They need a host built for long-running processes (Railway, Render, Fly.io, a VPS, etc.).
-3. **No backend authentication.** Every backend service trusts whatever `userId`/`teamId` is sent in the request body and uses a service-role (RLS-bypassing) database client; CORS is wide open (`*`). This is fine on `localhost` for development, but the backend must **not** be exposed on the public internet as-is — anyone who can reach it can act as any user. See [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) #1–4.
-4. **OAuth apps are in test/development mode.** The Facebook/Instagram/Threads app (Meta) and the Google Cloud project (YouTube) are not yet through their respective app review / verification processes. Until that's done, **only accounts explicitly added as test users in those consoles can connect** — a real outside user trying to connect their own Facebook, Instagram, YouTube or Threads account will hit an "access blocked" / "can't load URL" style error. This is a third-party platform restriction, not a bug in this code.
-5. **Two integrations are not real:** LinkedIn's OAuth callback stores a mock token (nothing published actually reaches LinkedIn), and TikTok is fully stubbed (connect and publish are both simulated). Both currently still appear as normal "Connected" platforms in the UI.
+1. **OAuth apps are in test/development mode.** The Facebook/Instagram/Threads app (Meta) and the Google Cloud project (YouTube) are not yet through their respective app review / verification processes. Until that's done, **only accounts explicitly added as test users in those consoles can connect** — a real outside user trying to connect their own Facebook, Instagram, YouTube or Threads account will hit an "access blocked" / "can't load URL" style error. This is a third-party platform restriction, not a bug in this code.
+2. **Two integrations are not real:** LinkedIn's OAuth callback stores a mock token (nothing published actually reaches LinkedIn), and TikTok is fully stubbed (connect and publish are both simulated). Both currently still appear as normal "Connected" platforms in the UI.
+3. **CORS is still wide open (`*`) on every backend service.** Session-verified endpoints (see below) reject a request whose token doesn't match the claimed user/team, but any origin can still reach these services — there's no origin allowlist yet.
 
-None of this blocks pushing the code or deploying the frontend for a first look at the UI — it does mean "let anyone fully test it live" needs the fixes above first (this is exactly why the previous deployment attempt only had the frontend working).
+None of this blocks pushing the code or deploying it for a first look — it does mean "let anyone fully test it live" needs the fixes above first.
+
+### What was fixed since the last note
+A full-codebase security/business-logic audit (see git history around commit `056829c`) fixed the two biggest blockers that used to be listed here:
+- **Backend session verification added.** `account-service`, `team-service`, `post-service`, `scheduling-service` and `media-service` now verify the caller's Supabase JWT server-side (`requireUser`/`requireTeamMember` in `packages/shared/src/auth.ts`) instead of trusting a client-supplied `userId`/`teamId`. `publishing-service` and `analytics-service` are internal-only (called by the worker/cron, not the browser) and don't need this.
+- **Frontend no longer hardcodes `localhost`.** API calls use env-var-driven URLs and attach the verified session token (`authHeader()` in `apps/web/src/lib/supabase.ts`).
+- **`ENCRYPTION_KEY` now fails fast instead of silently falling back to an insecure default** — see the Setup section below.
 
 ## ✨ What works today
 
@@ -89,7 +93,7 @@ docs/                           Detailed, actively-maintained project documentat
 3. Copy `.env.example` to `.env` in the repo root and fill in your own values. Every backend service loads this same root `.env`. Keys used across the codebase:
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
    - `REDIS_URL` (and optionally `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` for caching/rate-limiting)
-   - `ENCRYPTION_KEY` (32 characters — encrypts stored OAuth tokens; **set your own**, don't rely on the code's fallback)
+   - `ENCRYPTION_KEY` (exactly 32 characters — encrypts stored OAuth tokens at rest. **Required, no fallback**: `account-service`/`publishing-service`/`analytics-service` refuse to start without it. Don't change it after tokens have been stored, or existing tokens become undecryptable and every connected account needs reconnecting.)
    - `API_BASE_URL` (your public tunnel/deployment URL — used to build every OAuth redirect URI)
    - Per platform, as needed: `FACEBOOK_APP_ID/SECRET`, `THREADS_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI`, `TWITTER_CLIENT_ID/SECRET`, `LINKEDIN_CLIENT_ID/SECRET/REDIRECT_URI`, `PINTEREST_CLIENT_ID/SECRET/REDIRECT_URI`
 4. `apps/web` needs its own `apps/web/.env.local` (the frontend does **not** read the root `.env`):
@@ -110,8 +114,13 @@ For each OAuth provider you want to test, register `<API_BASE_URL>/api/v1/auth/<
 
 ## 📦 Deploying
 
-- **Frontend (`apps/web`) → Vercel:** import this repo, set the project's **Root Directory to `apps/web`**, and add the `NEXT_PUBLIC_*` environment variables in the Vercel project settings.
-- **Backend → not Vercel.** Use a host that supports long-running Node processes (Railway, Render, Fly.io, a VPS/Docker host...) for the nine services under `services/`. Whichever you choose, you'll still need to fix the hardcoded `localhost` URLs in the frontend (point #1 above) so it calls your deployed backend instead.
+**Docker (recommended — covers the whole stack).** The repo has a Dockerfile for every service plus a `docker-compose.yml` that wires all 10 containers together:
+- Root `Dockerfile` is generic and builds any one backend service via a build arg, e.g. `docker build --build-arg SERVICE=account-service -t account-service .` (it needs the whole repo as build context — npm workspace hoisting requires the full tree, not just that service's folder).
+- `apps/web/Dockerfile` builds the Next.js frontend using `output: 'standalone'`; it needs the `NEXT_PUBLIC_*` vars as **build args** (baked in at build time, not read at runtime) — see the comments at the top of `docker-compose.yml` and `.env.example`.
+- `docker compose up --build` runs the whole stack locally from those images. For a real deployment (e.g. [Coolify](https://coolify.io), or any Docker-capable host), point it at this repo's `docker-compose.yml` as a **Docker Compose resource** (not a single Dockerfile app — the stack is 10 separate services) and set every variable from `.env.example` as a real environment variable in that platform's dashboard (`.env` itself is gitignored and never committed).
+- Every backend service needs a **stable public `API_BASE_URL`** once deployed — this is what gets registered as the OAuth redirect base with Meta/Google/LinkedIn/Pinterest. A temporary tunnel (like `cloudflared`'s free quick-tunnel) generates a new random URL on every restart, which breaks OAuth until you update it everywhere again; a real deployment's fixed domain avoids that entirely.
+
+**Frontend only → Vercel** also still works if you only want to preview the UI: import this repo, set the project's **Root Directory to `apps/web`**, and add the `NEXT_PUBLIC_*` environment variables in the Vercel project settings. The backend still needs to be deployed separately (Vercel can't host the nine always-on `services/*` or the BullMQ worker) and reachable at a real URL for the app to actually work, not just render pages.
 
 ## 🐛 Known issues
 
@@ -119,7 +128,7 @@ For each OAuth provider you want to test, register `<API_BASE_URL>/api/v1/auth/<
 
 ## 🔐 Security note
 
-OAuth tokens are encrypted at rest before being stored. Row Level Security on Supabase restricts each user to their own team's data *in the database* — but see point 3 above: the backend services themselves don't yet enforce this independently, so they should stay behind a trusted boundary (e.g. `localhost`, or a private network) until that's addressed.
+OAuth tokens are encrypted at rest before being stored (`ENCRYPTION_KEY`, required — see Setup above). Row Level Security on Supabase restricts each user to their own team's data *in the database*, and the backend services that face the browser (`account-service`, `team-service`, `post-service`, `scheduling-service`, `media-service`) now verify the caller's Supabase session server-side before trusting any `userId`/`teamId`. CORS is still wide open on every service (see [Before you deploy](#-before-you-deploy-this-or-share-a-live-link) above) — worth adding an origin allowlist before treating this as production-hardened.
 
 ---
 *Read [`docs/RESUME_HERE.md`](docs/RESUME_HERE.md) for the most up-to-date snapshot of in-progress work.*

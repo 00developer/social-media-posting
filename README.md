@@ -23,5 +23,3 @@ SocialPush is a multi-platform social media scheduling and publishing tool ("wri
 - **Database / Auth / Storage:** Supabase (Postgres + Row Level Security + Auth + a public storage bucket for media)
 - **Queue:** Redis + BullMQ (delayed scheduling, retries, background sync)
 - **Media processing:** `sharp` (images), `ffmpeg` (video, per-platform aspect-ratio cropping)
-
-### Services (monorepo, npm workspaces: `apps/*`, `services/*`, `packages/*`)

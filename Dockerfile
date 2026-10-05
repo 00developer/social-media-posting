@@ -11,8 +11,11 @@
 #
 # worker and notification-service don't listen on a port (they only process BullMQ queues) -
 # EXPOSE is harmless either way and left out; nothing else about the build differs.
+#
+# Node 22, not 20: with no lockfile, `npm install` pulls the latest @supabase/supabase-js, whose
+# realtime client needs Node's native global WebSocket (Node 22+) and throws at createClient() on 20.
 
-FROM node:20-bookworm-slim AS build
+FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
 # The whole repo is copied in (not just this service's package.json) because this is an npm
@@ -38,7 +41,7 @@ ARG SERVICE
 RUN test -n "$SERVICE" || (echo "Missing --build-arg SERVICE=<name>, e.g. account-service" && exit 1)
 RUN npm run build -w @socialpush/${SERVICE}
 
-FROM node:20-bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ARG SERVICE

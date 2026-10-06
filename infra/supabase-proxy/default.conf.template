@@ -1,0 +1,39 @@
+# Reverse proxy in front of the Supabase project (REST, Auth, Storage, Realtime websockets).
+# Several Indian ISPs block *.supabase.co at the DNS level, which breaks every call the browser makes to
+# Supabase directly (sign-up/login, dashboard reads, realtime, media URLs). Pointing SUPABASE_URL and
+# NEXT_PUBLIC_SUPABASE_URL at this proxy's own domain keeps the app reachable from those networks.
+# ${SUPABASE_UPSTREAM_HOST} is filled in from the environment by the nginx image's template step at start-up.
+
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+server {
+  listen 80;
+  client_max_body_size 500m;
+
+  # Docker's internal DNS: resolving at request time (via the variable below) instead of once at start-up
+  # keeps the proxy working if Supabase's IPs change.
+  resolver 127.0.0.11 valid=30s ipv6=off;
+
+  location / {
+    set $supabase_upstream https://${SUPABASE_UPSTREAM_HOST};
+    proxy_pass $supabase_upstream;
+
+    proxy_ssl_server_name on;
+    proxy_ssl_name ${SUPABASE_UPSTREAM_HOST};
+    proxy_set_header Host ${SUPABASE_UPSTREAM_HOST};
+
+    # Realtime runs over websockets.
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+
+    # Stream uploads/downloads instead of buffering media files on disk.
+    proxy_buffering off;
+    proxy_request_buffering off;
+  }
+}

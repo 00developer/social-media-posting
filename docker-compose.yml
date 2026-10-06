@@ -97,3 +97,12 @@ services:
     environment:
       PORT: 3009
     restart: unless-stopped
+
+  # Reverse proxy to the Supabase project (see infra/supabase-proxy/default.conf.template for why). Give it a
+  # public domain on container port 80 and point SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL at that domain;
+  # SUPABASE_UPSTREAM_HOST is the real project host, e.g. abcdefghijklmnop.supabase.co (no https://).
+  supabase-proxy:
+    build: { context: ./infra/supabase-proxy }
+    environment:
+      SUPABASE_UPSTREAM_HOST: ${SUPABASE_UPSTREAM_HOST:-}
+    restart: unless-stopped

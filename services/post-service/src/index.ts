@@ -55,12 +55,12 @@ app.get('/api/v1/posts', async (req, res) => {
     }
 
     // Cache Miss - Fetch from DB
-    // The range (calendar) query leaves out the `user:user_id(email)` embed: posts.user_id
-    // references auth.users, which PostgREST cannot embed ("Could not find a relationship
-    // between 'posts' and 'user_id'"), and the calendar does not use the author's email.
+    // No `user:user_id(email)` embed on either query: posts.user_id references auth.users, which
+    // PostgREST cannot embed ("Could not find a relationship between 'posts' and 'user_id'"), and
+    // no caller uses the author's email.
     const selectClause = isRangeQuery
       ? '*, publish_jobs(*), schedules!inner(*)'
-      : '*, user:user_id(email), publish_jobs(*), schedules(*)';
+      : '*, publish_jobs(*), schedules(*)';
     let query = supabase.from('posts')
       .select(selectClause)
       .eq('team_id', teamId);

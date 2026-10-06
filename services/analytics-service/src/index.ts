@@ -258,15 +258,19 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
             })
             .eq('id', existing.id);
         } else {
-          const { data: jobData } = await supabase.from('publish_jobs')
+          // From posts, not publish_jobs: a post published to several platforms has one job per platform,
+          // and .single() errors on more than one row. user_id is a uuid column, so a post that no longer
+          // exists is skipped instead of inserting a placeholder that would fail the cast.
+          const { data: postData } = await supabase.from('posts')
             .select('user_id')
-            .eq('post_id', postId)
-            .single();
+            .eq('id', postId)
+            .maybeSingle();
+          if (!postData?.user_id) continue;
 
           await supabase.from('analytics')
             .insert({
               post_id: postId,
-              user_id: jobData?.user_id || 'unknown',
+              user_id: postData.user_id,
               platform: platform,
               likes: counts.likes,
               shares: counts.shares,

@@ -66,15 +66,22 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     } else {
       // Auto-create a team for newly signed up users - named after what they typed at
       // signup (options.data.team_name in user_metadata), falling back to a default.
-      const { data: newTeam, error: createError } = await supabase.from('teams').insert({ name: requestedTeamName?.trim() || 'My Personal Team' }).select().single();
+      // The id is generated here rather than read back with .insert().select(): teams' SELECT policy only shows
+      // a team to its members, and the creator isn't a member until the team_members row below exists, so
+      // RLS rejects the returning read and Postgres fails the whole insert.
+      const newTeamId = crypto.randomUUID();
+      const { error: createError } = await supabase.from('teams').insert({ id: newTeamId, name: requestedTeamName?.trim() || 'My Personal Team' });
       if (createError) {
         console.error('Error creating team:', createError.message || createError);
+        return;
       }
-      if (newTeam) {
-        const { error: tmError } = await supabase.from('team_members').insert({ team_id: newTeam.id, user_id: userId, role: 'owner' });
-        if (tmError) console.error('Error adding team member:', tmError);
-        await fetchTeams(userId, requestedTeamName);
+      const { error: tmError } = await supabase.from('team_members').insert({ team_id: newTeamId, user_id: userId, role: 'owner' });
+      if (tmError) {
+        // Stop here: re-fetching would find no membership and create yet another team on every retry.
+        console.error('Error adding team member:', tmError.message || tmError);
+        return;
       }
+      await fetchTeams(userId, requestedTeamName);
     }
   }, []);
 

@@ -28,6 +28,16 @@ process.on('unhandledRejection', (err) => {
 });
 const redisConnection = (0, shared_1.getRedisConnection)(process.env.REDIS_URL || 'redis://localhost:6379');
 const notificationsQueue = (0, shared_1.getNotificationsQueue)(redisConnection);
+// Server-to-server call, not exposed to the browser - a plain env var (not NEXT_PUBLIC_*) is enough.
+const PUBLISHING_SERVICE_URL = process.env.PUBLISHING_SERVICE_URL || 'http://localhost:3003';
+// Same pruning approach as PUBLISH_JOB_OPTIONS in scheduling-service: BullMQ removes a job from
+// Redis once it's this old OR the queue has this many finished jobs, whichever comes first. The
+// notification itself lives on in the `notifications` table - this only stops the queue entry
+// (already-processed bookkeeping) from sitting in Redis forever.
+const NOTIFICATION_JOB_OPTIONS = {
+    removeOnComplete: { age: 1 * 24 * 3600, count: 1000 },
+    removeOnFail: { age: 7 * 24 * 3600, count: 500 },
+};
 // Overridable so the retry flow can be exercised quickly without waiting minutes.
 const intEnv = (name, fallback) => {
     const n = parseInt(process.env[name] ?? '', 10);
@@ -69,10 +79,20 @@ const worker = new bullmq_1.Worker(shared_1.PUBLISH_QUEUE_NAME, async (job, toke
         await supabase.from('publish_jobs').update({ status: 'processing' }).eq('id', jobId);
         const { data: post } = await supabase.from('posts').select('content').eq('id', postId).single();
         contentExcerpt = post?.content ? `"${post.content.substring(0, 30)}${post.content.length > 30 ? '...' : ''}"` : 'Your post';
-        const res = await fetch(`http://localhost:3003/api/v1/publish/${jobId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
+        // Extended timeout of 10 minutes for video uploads and platform polling loops
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 600_000);
+        let res;
+        try {
+            res = await fetch(`${PUBLISHING_SERVICE_URL}/api/v1/publish/${jobId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal
+            });
+        }
+        finally {
+            clearTimeout(timeoutId);
+        }
         httpStatus = res.status;
         const result = await res.json().catch(() => ({}));
         if (res.status === 429) {
@@ -89,7 +109,16 @@ const worker = new bullmq_1.Worker(shared_1.PUBLISH_QUEUE_NAME, async (job, toke
     catch (error) {
         if (error instanceof bullmq_1.DelayedError)
             throw error; // the job was moved to "delayed" on purpose
-        const message = error?.message || 'Publishing failed';
+        let message = error?.message || 'Publishing failed';
+        if (error.name === 'AbortError') {
+            message = 'Publishing request timed out after 10 minutes';
+        }
+        else if (error?.cause?.message) {
+            message = `${message} (${error.cause.message})`;
+        }
+        else if (error?.cause?.code) {
+            message = `${message} (${error.cause.code})`;
+        }
         console.error(`[Worker] Job ${jobId} attempt ${attempt}/${maxAttempts} failed:`, message);
         const decision = (0, failureRules_1.decideFailureAction)({ httpStatus, message, attempt, maxAttempts });
         let finalMessage = message;
@@ -126,7 +155,7 @@ const worker = new bullmq_1.Worker(shared_1.PUBLISH_QUEUE_NAME, async (job, toke
             userId,
             type: 'failure',
             message: (0, failureRules_1.failureMessage)(contentExcerpt, platform, finalMessage, attempt)
-        }));
+        }, NOTIFICATION_JOB_OPTIONS));
         // UnrecoverableError: BullMQ must not retry this job any more
         throw new bullmq_1.UnrecoverableError(finalMessage);
     }
@@ -138,8 +167,13 @@ const worker = new bullmq_1.Worker(shared_1.PUBLISH_QUEUE_NAME, async (job, toke
         userId,
         type: 'success',
         message: `${contentExcerpt} to ${platform} has been successfully published.`
-    }));
-}, { connection: redisConnection });
+    }, NOTIFICATION_JOB_OPTIONS));
+}, {
+    connection: redisConnection,
+    concurrency: 2,
+    lockDuration: 600_000,
+    lockRenewTime: 30_000,
+});
 worker.on('failed', (job, err) => {
     console.log(`[Worker] ${job?.id} has failed with ${err.message}`);
 });

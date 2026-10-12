@@ -273,15 +273,30 @@ class InstagramAdapter implements PlatformAdapter {
     // 2. Poll for Status if it's a video/reel
     if (contentType === 'reel' || !body.image_url) {
       let isReady = false;
-      for (let i = 0; i < 24; i++) { // Poll up to 2 minutes (24 * 5s)
+      let consecutivePollErrors = 0;
+      for (let i = 0; i < 36; i++) { // Poll up to 3 minutes (36 * 5s)
         await new Promise(r => setTimeout(r, 5000));
-        const statusRes = await fetch(`https://graph.facebook.com/v18.0/${containerData.id}?fields=status_code&access_token=${decryptedToken}`);
-        const statusData = await statusRes.json();
-        if (statusData.status_code === 'FINISHED') {
+        let statusData: any = null;
+        try {
+          const statusRes = await fetch(`https://graph.facebook.com/v18.0/${containerData.id}?fields=status_code&access_token=${decryptedToken}`);
+          statusData = await statusRes.json();
+          consecutivePollErrors = 0;
+        } catch (pollErr: any) {
+          consecutivePollErrors++;
+          console.warn(`[InstagramAdapter] Poll attempt ${i + 1} network blip (${consecutivePollErrors}/5):`, pollErr.cause?.message || pollErr.message);
+          if (consecutivePollErrors >= 5) {
+            throw new Error(`Instagram media container polling failed after 5 consecutive network errors: ${pollErr.cause?.message || pollErr.message}`);
+          }
+          continue;
+        }
+
+        if (statusData?.status_code === 'FINISHED') {
           isReady = true;
           break;
-        } else if (statusData.status_code === 'ERROR') {
+        } else if (statusData?.status_code === 'ERROR') {
           throw new Error('Instagram media container processing failed.');
+        } else {
+          console.log(`[InstagramAdapter] Container ${containerData.id} status: ${statusData?.status_code || 'IN_PROGRESS'} (poll ${i + 1}/36)`);
         }
       }
       if (!isReady) {
@@ -348,7 +363,12 @@ class YouTubeAdapter implements PlatformAdapter {
     const fileSize = videoBuffer.byteLength;
     
     if (!sessionUri) {
-      // 1. Init session
+      const lines = (post.content || '').split('\n').map((l: string) => l.trim()).filter(Boolean);
+      let youtubeTitle = (lines[0] || 'SocialPush Video').replace(/[\r\n\t]+/g, ' ').trim();
+      if (youtubeTitle.length > 100) {
+        youtubeTitle = youtubeTitle.substring(0, 97) + '...';
+      }
+
       const initRes = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
         method: 'POST',
         headers: {
@@ -358,8 +378,8 @@ class YouTubeAdapter implements PlatformAdapter {
         },
         body: JSON.stringify({
           snippet: { 
-            title: post.content.substring(0, 100) || 'SocialPush Video',
-            description: contentType === 'reel' ? `${post.content}\n#Shorts` : post.content
+            title: youtubeTitle,
+            description: contentType === 'reel' ? `${post.content}\n\n#Shorts` : post.content
           },
           status: { privacyStatus: YOUTUBE_PRIVACY }
         })
@@ -790,41 +810,86 @@ class ThreadsAdapter implements PlatformAdapter {
     }
 
     // 1. Create Container
-    const containerRes = await fetch(`https://graph.threads.net/v1.0/me/threads`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const containerData = await containerRes.json();
-    if (containerData.error) throw new Error(containerData.error.message);
+    let containerRes;
+    try {
+      containerRes = await fetch(`https://graph.threads.net/v1.0/me/threads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } catch (netErr: any) {
+      throw new Error(`Threads container creation network error: ${netErr.cause?.message || netErr.message}`);
+    }
+
+    let containerData: any = {};
+    try {
+      containerData = await containerRes.json();
+    } catch {
+      throw new Error(`Threads container creation returned invalid response (HTTP ${containerRes.status})`);
+    }
+    if (containerData.error) {
+      throw new Error(`Threads API Error (${containerData.error.code || 'unknown'}): ${containerData.error.message}`);
+    }
+    if (!containerData.id) {
+      throw new Error(`Threads container creation failed: No container ID returned`);
+    }
+    console.log(`[ThreadsAdapter] Container created: ${containerData.id}`);
 
     // 2. Poll for status if media
     if (body.media_type !== 'TEXT') {
       let isReady = false;
-      for (let i = 0; i < 24; i++) { // Poll up to 2 mins
+      let consecutivePollErrors = 0;
+      for (let i = 0; i < 36; i++) { // Poll up to 3 mins (36 * 5s)
         await new Promise(r => setTimeout(r, 5000));
-        const statusRes = await fetch(`https://graph.threads.net/v1.0/${containerData.id}?fields=status,error_message&access_token=${decryptedToken}`);
-        const statusData = await statusRes.json();
-        if (statusData.status === 'FINISHED') {
+        let statusData: any = null;
+        try {
+          const statusRes = await fetch(`https://graph.threads.net/v1.0/${containerData.id}?fields=status,error_message&access_token=${decryptedToken}`);
+          statusData = await statusRes.json();
+          consecutivePollErrors = 0;
+        } catch (pollErr: any) {
+          consecutivePollErrors++;
+          console.warn(`[ThreadsAdapter] Poll attempt ${i + 1} network blip (${consecutivePollErrors}/5):`, pollErr.cause?.message || pollErr.message);
+          if (consecutivePollErrors >= 5) {
+            throw new Error(`Threads media container polling failed after 5 consecutive network errors: ${pollErr.cause?.message || pollErr.message}`);
+          }
+          continue; // Don't abort the entire job for 1 transient network blip
+        }
+
+        if (statusData?.status === 'FINISHED') {
           isReady = true;
           break;
-        } else if (statusData.status === 'ERROR') {
-          throw new Error(`Threads media container processing failed: ${statusData.error_message || 'Unknown error'}`);
+        } else if (statusData?.status === 'ERROR') {
+          throw new Error(`Threads media container processing failed: ${statusData.error_message || 'Unknown Meta error'}`);
+        } else {
+          console.log(`[ThreadsAdapter] Container ${containerData.id} status: ${statusData?.status || 'IN_PROGRESS'} (poll ${i + 1}/36)`);
         }
       }
       if (!isReady) {
-        throw new Error('Threads media container timed out waiting for processing.');
+        throw new Error('Threads media container timed out waiting for processing (took > 3 mins).');
       }
     }
 
     // 3. Publish
-    const publishRes = await fetch(`https://graph.threads.net/v1.0/me/threads_publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ creation_id: containerData.id, access_token: decryptedToken })
-    });
-    const publishData = await publishRes.json();
-    if (publishData.error) throw new Error(publishData.error.message);
+    let publishRes;
+    try {
+      publishRes = await fetch(`https://graph.threads.net/v1.0/me/threads_publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creation_id: containerData.id, access_token: decryptedToken })
+      });
+    } catch (netErr: any) {
+      throw new Error(`Threads publish network error: ${netErr.cause?.message || netErr.message}`);
+    }
+
+    let publishData: any = {};
+    try {
+      publishData = await publishRes.json();
+    } catch {
+      throw new Error(`Threads publish returned invalid response (HTTP ${publishRes.status})`);
+    }
+    if (publishData.error) {
+      throw new Error(`Threads Publish API Error (${publishData.error.code || 'unknown'}): ${publishData.error.message}`);
+    }
     
     await recordPublishedPost(post, 'threads', publishData.id, contentType === 'reel' ? 'reel' : 'post');
     console.log(`[ThreadsAdapter] Successfully published post ${post.id}`);
@@ -890,13 +955,19 @@ app.post('/api/v1/publish/:jobId', async (req, res) => {
     
     res.json({ success: true, message: `Published to ${job.platform}` });
   } catch (error: any) {
-    console.error(error);
-    if (error.message && error.message.includes('rate limit reached')) {
-      return res.status(429).json({ error: error.message });
+    const detail = error?.cause?.message ? `${error.message} (${error.cause.message})` : (error?.message || 'Failed to publish');
+    console.error(`[PublishingService] Error publishing job ${jobId}:`, detail);
+    if (detail.includes('rate limit reached')) {
+      return res.status(429).json({ error: detail });
     }
-    res.status(500).json({ error: error.message || 'Failed to publish' });
+    res.status(500).json({ error: detail });
   }
 });
 
 const PORT = process.env.PORT || 3003;
-app.listen(PORT, () => console.log(`Publishing Service listening on port ${PORT}`));
+const server = app.listen(PORT, () => console.log(`Publishing Service listening on port ${PORT}`));
+// Crucial for long video uploads and polling loops: prevent Node 18/20/22 default 60s headersTimeout
+server.headersTimeout = 600_000; // 10 minutes
+server.requestTimeout = 600_000; // 10 minutes
+server.keepAliveTimeout = 120_000; // 2 minutes
+server.timeout = 600_000; // 10 minutes

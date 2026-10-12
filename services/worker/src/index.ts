@@ -92,10 +92,21 @@ const worker = new Worker(PUBLISH_QUEUE_NAME, async (job: Job, token?: string) =
     const { data: post } = await supabase.from('posts').select('content').eq('id', postId).single();
     contentExcerpt = post?.content ? `"${post.content.substring(0, 30)}${post.content.length > 30 ? '...' : ''}"` : 'Your post';
 
-    const res = await fetch(`${PUBLISHING_SERVICE_URL}/api/v1/publish/${jobId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
+    // Extended timeout of 10 minutes for video uploads and platform polling loops
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600_000);
+
+    let res: Response;
+    try {
+      res = await fetch(`${PUBLISHING_SERVICE_URL}/api/v1/publish/${jobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     httpStatus = res.status;
     const result = await res.json().catch(() => ({} as any));
 
@@ -113,7 +124,14 @@ const worker = new Worker(PUBLISH_QUEUE_NAME, async (job: Job, token?: string) =
   } catch (error: any) {
     if (error instanceof DelayedError) throw error; // the job was moved to "delayed" on purpose
 
-    const message: string = error?.message || 'Publishing failed';
+    let message: string = error?.message || 'Publishing failed';
+    if (error.name === 'AbortError') {
+      message = 'Publishing request timed out after 10 minutes';
+    } else if (error?.cause?.message) {
+      message = `${message} (${error.cause.message})`;
+    } else if (error?.cause?.code) {
+      message = `${message} (${error.cause.code})`;
+    }
     console.error(`[Worker] Job ${jobId} attempt ${attempt}/${maxAttempts} failed:`, message);
     const decision = decideFailureAction({ httpStatus, message, attempt, maxAttempts });
 
@@ -164,7 +182,12 @@ const worker = new Worker(PUBLISH_QUEUE_NAME, async (job: Job, token?: string) =
     type: 'success',
     message: `${contentExcerpt} to ${platform} has been successfully published.`
   }, NOTIFICATION_JOB_OPTIONS));
-}, { connection: redisConnection });
+}, {
+  connection: redisConnection,
+  concurrency: 2,
+  lockDuration: 600_000,
+  lockRenewTime: 30_000,
+});
 
 worker.on('failed', (job, err) => {
   console.log(`[Worker] ${job?.id} has failed with ${err.message}`);

@@ -16,7 +16,9 @@ const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 const supabase = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
+const ENCRYPTION_KEY = (0, shared_1.requireEncryptionKey)();
+// Server-to-server call, not exposed to the browser - a plain env var (not NEXT_PUBLIC_*) is enough.
+const ACCOUNT_SERVICE_URL = process.env.ACCOUNT_SERVICE_URL || 'http://localhost:3001';
 function decrypt(text) {
     const textParts = text.split(':');
     const iv = Buffer.from(textParts.shift(), 'hex');
@@ -29,10 +31,45 @@ function decrypt(text) {
 class TwitterAdapter {
     async publish(post, account, decryptedToken, contentType, job) {
         const client = new twitter_api_v2_1.TwitterApi(decryptedToken);
-        // Note: Twitter API requires media ID upload for attachments. 
-        // Kept simple for text MVP execution to prove adapter flow.
-        await client.v2.tweet(post.content);
+        let mediaId = null;
+        try {
+            const media = JSON.parse(post.media_url || '{}');
+            const mediaUrl = media.twitter || null;
+            if (mediaUrl) {
+                const mediaRes = await fetch(mediaUrl);
+                if (!mediaRes.ok)
+                    throw new Error(`Failed to fetch media from ${mediaUrl}`);
+                const buffer = Buffer.from(await mediaRes.arrayBuffer());
+                const mime = mediaRes.headers.get('content-type') || '';
+                const isVideo = mime.startsWith('video/');
+                mediaId = await client.v2.uploadMedia(buffer, {
+                    media_type: isVideo ? 'video/mp4' : (mime.includes('png') ? 'image/png' : 'image/jpeg'),
+                    media_category: isVideo ? 'tweet_video' : 'tweet_image',
+                });
+            }
+        }
+        catch (e) {
+            // Attaching media should never block the tweet itself - post text-only rather than fail the whole job.
+            console.warn(`[TwitterAdapter] Could not attach media for post ${post.id}, tweeting text only: ${e.message}`);
+            mediaId = null;
+        }
+        const tweet = await client.v2.tweet(post.content, mediaId ? { media: { media_ids: [mediaId] } } : undefined);
+        await recordPublishedPost(post, 'twitter', tweet.data?.id, 'post');
         console.log(`[TwitterAdapter] Published post ${post.id}`);
+    }
+}
+// Remember the platform-side id of what we published so the analytics service can look up its stats later.
+// Best-effort: analytics must never make a successful publish fail (and the table may not exist yet).
+async function recordPublishedPost(post, platform, externalId, kind = 'post') {
+    if (!externalId)
+        return;
+    try {
+        const { error } = await supabase.from('published_posts').upsert({ post_id: post.id, platform, external_id: String(externalId), external_kind: kind, user_id: post.user_id, team_id: post.team_id ?? null }, { onConflict: 'post_id,platform' });
+        if (error)
+            console.warn(`[published_posts] could not record the ${platform} id for post ${post.id}: ${error.message}`);
+    }
+    catch (e) {
+        console.warn(`[published_posts] could not record the ${platform} id for post ${post.id}:`, e instanceof Error ? e.message : e);
     }
 }
 async function getFacebookPages(decryptedToken) {
@@ -73,8 +110,11 @@ class FacebookAdapter {
         const pages = await getFacebookPages(decryptedToken);
         if (!pages || pages.length === 0)
             throw new Error("No Facebook pages found for this user.");
-        // Default to the first page for automated flow
-        const page = pages[0];
+        // Facebook's /me/accounts does not guarantee stable ordering between calls, so blindly using pages[0] could
+        // silently post to a different Page than the one shown when the user connected. Prefer the exact Page id
+        // captured at connect time (account.provider_account_id, see account-service/src/identity.ts); only fall back
+        // to the first page for accounts connected before that was recorded.
+        const page = (account.provider_account_id && pages.find((p) => p.id === account.provider_account_id)) || pages[0];
         const pageToken = page.access_token;
         const pageId = page.id;
         let mediaUrl = null;
@@ -121,6 +161,8 @@ class FacebookAdapter {
         const data = await res.json();
         if (data.error)
             throw new Error(data.error.message);
+        // Photo posts return { id: <photo id>, post_id: <feed post id> }; text posts return { id: <post id> }.
+        await recordPublishedPost(post, 'facebook', data.post_id || data.id, 'post');
         console.log(`[FacebookAdapter] Successfully published to Facebook page ${pageId}`);
     }
     async publishFacebookReel(post, pageToken, pageId, mediaUrl) {
@@ -166,6 +208,7 @@ class FacebookAdapter {
         if (finishData.error)
             throw new Error(`Facebook Finish Phase Error: ${finishData.error.message}`);
         if (finishData.success) {
+            await recordPublishedPost(post, 'facebook', videoId, 'video');
             console.log(`[FacebookAdapter] Successfully published Reel to Facebook page ${pageId}`);
         }
         else {
@@ -179,7 +222,9 @@ class InstagramAdapter {
         const pages = await getFacebookPages(decryptedToken);
         if (!pages || pages.length === 0)
             throw new Error("No Facebook pages found.");
-        const pageWithIg = pages.find((p) => p.instagram_business_account);
+        // Same reasoning as FacebookAdapter above: prefer the exact IG business account id captured at connect time.
+        const pageWithIg = (account.provider_account_id && pages.find((p) => p.instagram_business_account?.id === account.provider_account_id))
+            || pages.find((p) => p.instagram_business_account);
         if (!pageWithIg)
             throw new Error("No Instagram Business account linked to any of your Facebook pages.");
         const igAccountId = pageWithIg.instagram_business_account.id;
@@ -212,16 +257,32 @@ class InstagramAdapter {
         // 2. Poll for Status if it's a video/reel
         if (contentType === 'reel' || !body.image_url) {
             let isReady = false;
-            for (let i = 0; i < 24; i++) { // Poll up to 2 minutes (24 * 5s)
+            let consecutivePollErrors = 0;
+            for (let i = 0; i < 36; i++) { // Poll up to 3 minutes (36 * 5s)
                 await new Promise(r => setTimeout(r, 5000));
-                const statusRes = await fetch(`https://graph.facebook.com/v18.0/${containerData.id}?fields=status_code&access_token=${decryptedToken}`);
-                const statusData = await statusRes.json();
-                if (statusData.status_code === 'FINISHED') {
+                let statusData = null;
+                try {
+                    const statusRes = await fetch(`https://graph.facebook.com/v18.0/${containerData.id}?fields=status_code&access_token=${decryptedToken}`);
+                    statusData = await statusRes.json();
+                    consecutivePollErrors = 0;
+                }
+                catch (pollErr) {
+                    consecutivePollErrors++;
+                    console.warn(`[InstagramAdapter] Poll attempt ${i + 1} network blip (${consecutivePollErrors}/5):`, pollErr.cause?.message || pollErr.message);
+                    if (consecutivePollErrors >= 5) {
+                        throw new Error(`Instagram media container polling failed after 5 consecutive network errors: ${pollErr.cause?.message || pollErr.message}`);
+                    }
+                    continue;
+                }
+                if (statusData?.status_code === 'FINISHED') {
                     isReady = true;
                     break;
                 }
-                else if (statusData.status_code === 'ERROR') {
+                else if (statusData?.status_code === 'ERROR') {
                     throw new Error('Instagram media container processing failed.');
+                }
+                else {
+                    console.log(`[InstagramAdapter] Container ${containerData.id} status: ${statusData?.status_code || 'IN_PROGRESS'} (poll ${i + 1}/36)`);
                 }
             }
             if (!isReady) {
@@ -237,15 +298,19 @@ class InstagramAdapter {
         const publishData = await publishRes.json();
         if (publishData.error)
             throw new Error(publishData.error.message);
+        await recordPublishedPost(post, 'instagram', publishData.id, contentType === 'reel' ? 'reel' : 'post');
         console.log(`[InstagramAdapter] Successfully published to IG account ${igAccountId}`);
     }
 }
+// Uploads are public by default. Override with YOUTUBE_PRIVACY=unlisted|private (e.g. for testing).
+// Note: Google can force uploads from an unaudited API project to private regardless of this setting.
+const YOUTUBE_PRIVACY = ["public", "unlisted", "private"].includes(process.env.YOUTUBE_PRIVACY || "") ? process.env.YOUTUBE_PRIVACY : "public";
 class YouTubeAdapter {
     async publish(post, account, decryptedToken, contentType, job) {
         console.log(`[YouTubeAdapter] Publishing post ${post.id} (Type: ${contentType || 'post'})`);
         let activeToken = decryptedToken;
         try {
-            const refreshRes = await fetch('http://localhost:3001/api/v1/auth/youtube/refresh', {
+            const refreshRes = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/youtube/refresh`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ accountId: account.id })
@@ -277,7 +342,11 @@ class YouTubeAdapter {
         const videoBuffer = await mediaRes.arrayBuffer();
         const fileSize = videoBuffer.byteLength;
         if (!sessionUri) {
-            // 1. Init session
+            const lines = (post.content || '').split('\n').map((l) => l.trim()).filter(Boolean);
+            let youtubeTitle = (lines[0] || 'SocialPush Video').replace(/[\r\n\t]+/g, ' ').trim();
+            if (youtubeTitle.length > 100) {
+                youtubeTitle = youtubeTitle.substring(0, 97) + '...';
+            }
             const initRes = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
                 method: 'POST',
                 headers: {
@@ -287,10 +356,10 @@ class YouTubeAdapter {
                 },
                 body: JSON.stringify({
                     snippet: {
-                        title: post.content.substring(0, 100) || 'SocialPush Video',
-                        description: contentType === 'reel' ? `${post.content}\n#Shorts` : post.content
+                        title: youtubeTitle,
+                        description: contentType === 'reel' ? `${post.content}\n\n#Shorts` : post.content
                     },
-                    status: { privacyStatus: 'unlisted' }
+                    status: { privacyStatus: YOUTUBE_PRIVACY }
                 })
             });
             if (!initRes.ok) {
@@ -367,6 +436,8 @@ class YouTubeAdapter {
         }
     }
 }
+// LinkedIn versions the REST API by YYYYMM and retires each after ~1 year; override via env if it goes stale.
+const LINKEDIN_API_VERSION = process.env.LINKEDIN_API_VERSION || '202606';
 class LinkedInAdapter {
     async publish(post, account, decryptedToken, contentType, job) {
         console.log(`[LinkedInAdapter] Publishing post ${post.id} via LinkedIn REST API...`);
@@ -399,40 +470,65 @@ class LinkedInAdapter {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${decryptedToken}`,
-                    'Linkedin-Version': '202401',
+                    'Linkedin-Version': LINKEDIN_API_VERSION,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    initializeUploadRequest: {
-                        owner: authorUrn
-                    }
+                    initializeUploadRequest: isVideo
+                        ? { owner: authorUrn, fileSizeBytes: mediaBuffer.byteLength, uploadCaptions: false, uploadThumbnail: false }
+                        : { owner: authorUrn }
                 })
             });
             const initData = await initRes.json();
             if (initData.status && initData.status >= 400) {
                 throw new Error(`LinkedIn Media Init Error: ${JSON.stringify(initData)}`);
             }
-            let uploadUrl;
             if (isVideo) {
-                uploadUrl = initData.value.uploadInstructions[0].uploadUrl;
+                // Videos are uploaded in the byte ranges LinkedIn hands back (one PUT per range), then finalized.
                 mediaUrn = initData.value.video;
+                const uploadedPartIds = [];
+                for (const part of initData.value.uploadInstructions) {
+                    const partRes = await fetch(part.uploadUrl, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/octet-stream' },
+                        body: Buffer.from(mediaBuffer.slice(part.firstByte, part.lastByte + 1))
+                    });
+                    if (!partRes.ok) {
+                        const errText = await partRes.text();
+                        throw new Error(`LinkedIn Media Upload Error: ${errText}`);
+                    }
+                    uploadedPartIds.push(partRes.headers.get('etag') || '');
+                }
+                const finalizeRes = await fetch('https://api.linkedin.com/rest/videos?action=finalizeUpload', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${decryptedToken}`,
+                        'Linkedin-Version': LINKEDIN_API_VERSION,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        finalizeUploadRequest: { video: mediaUrn, uploadToken: initData.value.uploadToken || '', uploadedPartIds }
+                    })
+                });
+                if (!finalizeRes.ok) {
+                    const errText = await finalizeRes.text();
+                    throw new Error(`LinkedIn Media Finalize Error: ${errText}`);
+                }
             }
             else {
-                uploadUrl = initData.value.uploadUrl;
                 mediaUrn = initData.value.image;
-            }
-            // Upload Binary
-            const uploadRes = await fetch(uploadUrl, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${decryptedToken}`, // Safe to include
-                    'Content-Type': 'application/octet-stream'
-                },
-                body: Buffer.from(mediaBuffer)
-            });
-            if (!uploadRes.ok) {
-                const errText = await uploadRes.text();
-                throw new Error(`LinkedIn Media Upload Error: ${errText}`);
+                const uploadRes = await fetch(initData.value.uploadUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${decryptedToken}`,
+                        'Content-Type': 'application/octet-stream'
+                    },
+                    body: Buffer.from(mediaBuffer)
+                });
+                if (!uploadRes.ok) {
+                    const errText = await uploadRes.text();
+                    throw new Error(`LinkedIn Media Upload Error: ${errText}`);
+                }
             }
         }
         // 2. Create Post
@@ -460,7 +556,7 @@ class LinkedInAdapter {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${decryptedToken}`,
-                'Linkedin-Version': '202401',
+                'Linkedin-Version': LINKEDIN_API_VERSION,
                 'Content-Type': 'application/json',
                 'X-Restli-Protocol-Version': '2.0.0'
             },
@@ -470,6 +566,8 @@ class LinkedInAdapter {
             const errText = await postRes.text();
             throw new Error(`LinkedIn Post Error: ${errText}`);
         }
+        // LinkedIn returns the new post's URN in the x-restli-id header.
+        await recordPublishedPost(post, 'linkedin', postRes.headers.get('x-restli-id'), 'post');
         console.log(`[LinkedInAdapter] Successfully published post ${post.id} to LinkedIn`);
     }
 }
@@ -480,8 +578,23 @@ class TikTokAdapter {
         throw new Error('TikTok publishing is not implemented yet.');
     }
 }
+// Trial-access Pinterest apps can only call the sandbox host; set PINTEREST_API_BASE=https://api-sandbox.pinterest.com to test there.
+const PINTEREST_API_BASE = process.env.PINTEREST_API_BASE || 'https://api.pinterest.com';
+// Trial-access apps get 401 in the sandbox with a normal OAuth token; the sandbox needs the token generated in the Pinterest developer portal.
+const pinterestToken = (oauthToken) => PINTEREST_API_BASE.includes('sandbox') && process.env.PINTEREST_SANDBOX_TOKEN ? process.env.PINTEREST_SANDBOX_TOKEN : oauthToken;
+// post.media_url is a JSON map of platform -> URL (see ARCHITECTURE.md); fall back to a plain URL string.
+function pinterestMediaUrl(post) {
+    try {
+        const media = JSON.parse(post.media_url || '{}');
+        return media.pinterest || null;
+    }
+    catch (e) {
+        return post.media_url || null;
+    }
+}
 class PinterestAdapter {
     async publish(post, account, decryptedToken, contentType, job) {
+        const token = pinterestToken(decryptedToken);
         console.log(`[PinterestAdapter] Publishing post ${post.id} via Pinterest API...`);
         let boardId = job?.pinterest_board_id;
         if (!boardId) {
@@ -498,10 +611,10 @@ class PinterestAdapter {
         const title = post.content ? post.content.substring(0, 95) : 'Pin';
         const description = post.content || '';
         if (contentType === 'reel') {
-            const registerRes = await fetch('https://api.pinterest.com/v5/media', {
+            const registerRes = await fetch(`${PINTEREST_API_BASE}/v5/media`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${decryptedToken}`,
+                    'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ media_type: 'video' })
@@ -510,7 +623,7 @@ class PinterestAdapter {
             if (!registerRes.ok)
                 throw new Error(`Pinterest Media Registration Error: ${registerData.message || JSON.stringify(registerData)}`);
             const { media_id, upload_url, upload_parameters } = registerData;
-            const videoUrl = post.media_variants?.pinterest || post.media_url;
+            const videoUrl = pinterestMediaUrl(post);
             if (!videoUrl)
                 throw new Error('No video URL provided for Pinterest Reel');
             const videoRes = await fetch(videoUrl);
@@ -529,10 +642,10 @@ class PinterestAdapter {
                 throw new Error(`Pinterest S3 Upload Error: ${errText}`);
             }
             await new Promise(r => setTimeout(r, 5000));
-            const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
+            const pinRes = await fetch(`${PINTEREST_API_BASE}/v5/pins`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${decryptedToken}`,
+                    'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
@@ -541,7 +654,7 @@ class PinterestAdapter {
                     description: description,
                     media_source: {
                         source_type: 'video_id',
-                        cover_image_url: 'https://via.placeholder.com/1000x1500.jpg',
+                        cover_image_key_frame_time: 0,
                         media_id: media_id
                     }
                 })
@@ -551,21 +664,21 @@ class PinterestAdapter {
                 throw new Error(`Pinterest Video Pin Error: ${pinData.message || JSON.stringify(pinData)}`);
             // Store the pin_id for analytics
             if (pinData.id) {
-                await supabase.from('pinterest_published_pins').insert({
+                await supabase.from('pinterest_published_pins').upsert({
                     post_id: post.id,
                     pin_id: pinData.id,
                     user_id: post.user_id
-                });
+                }, { onConflict: 'post_id' });
             }
         }
         else {
-            const imageUrl = post.media_variants?.pinterest || post.media_url;
+            const imageUrl = pinterestMediaUrl(post);
             if (!imageUrl)
                 throw new Error('No image URL provided for Pinterest Pin');
-            const pinRes = await fetch('https://api.pinterest.com/v5/pins', {
+            const pinRes = await fetch(`${PINTEREST_API_BASE}/v5/pins`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${decryptedToken}`,
+                    'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
@@ -583,11 +696,11 @@ class PinterestAdapter {
                 throw new Error(`Pinterest Image Pin Error: ${pinData.message || JSON.stringify(pinData)}`);
             // Store the pin_id for analytics
             if (pinData.id) {
-                await supabase.from('pinterest_published_pins').insert({
+                await supabase.from('pinterest_published_pins').upsert({
                     post_id: post.id,
                     pin_id: pinData.id,
                     user_id: post.user_id
-                });
+                }, { onConflict: 'post_id' });
             }
         }
         console.log(`[PinterestAdapter] Successfully published post ${post.id} to Pinterest (Board: ${boardId})`);
@@ -632,42 +745,89 @@ class ThreadsAdapter {
             body.media_type = 'TEXT';
         }
         // 1. Create Container
-        const containerRes = await fetch(`https://graph.threads.net/v1.0/me/threads`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        const containerData = await containerRes.json();
-        if (containerData.error)
-            throw new Error(containerData.error.message);
+        let containerRes;
+        try {
+            containerRes = await fetch(`https://graph.threads.net/v1.0/me/threads`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+        }
+        catch (netErr) {
+            throw new Error(`Threads container creation network error: ${netErr.cause?.message || netErr.message}`);
+        }
+        let containerData = {};
+        try {
+            containerData = await containerRes.json();
+        }
+        catch {
+            throw new Error(`Threads container creation returned invalid response (HTTP ${containerRes.status})`);
+        }
+        if (containerData.error) {
+            throw new Error(`Threads API Error (${containerData.error.code || 'unknown'}): ${containerData.error.message}`);
+        }
+        if (!containerData.id) {
+            throw new Error(`Threads container creation failed: No container ID returned`);
+        }
+        console.log(`[ThreadsAdapter] Container created: ${containerData.id}`);
         // 2. Poll for status if media
         if (body.media_type !== 'TEXT') {
             let isReady = false;
-            for (let i = 0; i < 24; i++) { // Poll up to 2 mins
+            let consecutivePollErrors = 0;
+            for (let i = 0; i < 36; i++) { // Poll up to 3 mins (36 * 5s)
                 await new Promise(r => setTimeout(r, 5000));
-                const statusRes = await fetch(`https://graph.threads.net/v1.0/${containerData.id}?fields=status,error_message&access_token=${decryptedToken}`);
-                const statusData = await statusRes.json();
-                if (statusData.status === 'FINISHED') {
+                let statusData = null;
+                try {
+                    const statusRes = await fetch(`https://graph.threads.net/v1.0/${containerData.id}?fields=status,error_message&access_token=${decryptedToken}`);
+                    statusData = await statusRes.json();
+                    consecutivePollErrors = 0;
+                }
+                catch (pollErr) {
+                    consecutivePollErrors++;
+                    console.warn(`[ThreadsAdapter] Poll attempt ${i + 1} network blip (${consecutivePollErrors}/5):`, pollErr.cause?.message || pollErr.message);
+                    if (consecutivePollErrors >= 5) {
+                        throw new Error(`Threads media container polling failed after 5 consecutive network errors: ${pollErr.cause?.message || pollErr.message}`);
+                    }
+                    continue; // Don't abort the entire job for 1 transient network blip
+                }
+                if (statusData?.status === 'FINISHED') {
                     isReady = true;
                     break;
                 }
-                else if (statusData.status === 'ERROR') {
-                    throw new Error(`Threads media container processing failed: ${statusData.error_message || 'Unknown error'}`);
+                else if (statusData?.status === 'ERROR') {
+                    throw new Error(`Threads media container processing failed: ${statusData.error_message || 'Unknown Meta error'}`);
+                }
+                else {
+                    console.log(`[ThreadsAdapter] Container ${containerData.id} status: ${statusData?.status || 'IN_PROGRESS'} (poll ${i + 1}/36)`);
                 }
             }
             if (!isReady) {
-                throw new Error('Threads media container timed out waiting for processing.');
+                throw new Error('Threads media container timed out waiting for processing (took > 3 mins).');
             }
         }
         // 3. Publish
-        const publishRes = await fetch(`https://graph.threads.net/v1.0/me/threads_publish`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ creation_id: containerData.id, access_token: decryptedToken })
-        });
-        const publishData = await publishRes.json();
-        if (publishData.error)
-            throw new Error(publishData.error.message);
+        let publishRes;
+        try {
+            publishRes = await fetch(`https://graph.threads.net/v1.0/me/threads_publish`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ creation_id: containerData.id, access_token: decryptedToken })
+            });
+        }
+        catch (netErr) {
+            throw new Error(`Threads publish network error: ${netErr.cause?.message || netErr.message}`);
+        }
+        let publishData = {};
+        try {
+            publishData = await publishRes.json();
+        }
+        catch {
+            throw new Error(`Threads publish returned invalid response (HTTP ${publishRes.status})`);
+        }
+        if (publishData.error) {
+            throw new Error(`Threads Publish API Error (${publishData.error.code || 'unknown'}): ${publishData.error.message}`);
+        }
+        await recordPublishedPost(post, 'threads', publishData.id, contentType === 'reel' ? 'reel' : 'post');
         console.log(`[ThreadsAdapter] Successfully published post ${post.id}`);
     }
 }
@@ -686,6 +846,18 @@ app.post('/api/v1/publish/:jobId', async (req, res) => {
     const { data: job, error: jobError } = await supabase.from('publish_jobs').select('*').eq('id', jobId).single();
     if (jobError || !job)
         return res.status(404).json({ error: 'Job not found' });
+    // Idempotency guard: a worker crash or BullMQ stalled-job redelivery can call this endpoint again for a job
+    // that already published successfully (the actual platform call and recordPublishedPost() below both finished,
+    // but the worker died before it could mark the job 'completed'). Without this check that replay would post the
+    // same content to the platform a second time. `published_posts` is the source of truth for "did this post_id +
+    // platform combination already go out", since adapter.publish() only records it after a real success.
+    if (job.status === 'completed') {
+        return res.json({ success: true, message: `Already published to ${job.platform} (job already completed).` });
+    }
+    const { data: already } = await supabase.from('published_posts').select('id').eq('post_id', job.post_id).eq('platform', job.platform).maybeSingle();
+    if (already) {
+        return res.json({ success: true, message: `Already published to ${job.platform} (found an existing record).` });
+    }
     // Rate Limiting Check
     if (shared_1.publishRateLimiter) {
         const { success, limit, remaining, reset } = await shared_1.publishRateLimiter.limit(`publish_${job.user_id}`);
@@ -712,12 +884,18 @@ app.post('/api/v1/publish/:jobId', async (req, res) => {
         res.json({ success: true, message: `Published to ${job.platform}` });
     }
     catch (error) {
-        console.error(error);
-        if (error.message && error.message.includes('rate limit reached')) {
-            return res.status(429).json({ error: error.message });
+        const detail = error?.cause?.message ? `${error.message} (${error.cause.message})` : (error?.message || 'Failed to publish');
+        console.error(`[PublishingService] Error publishing job ${jobId}:`, detail);
+        if (detail.includes('rate limit reached')) {
+            return res.status(429).json({ error: detail });
         }
-        res.status(500).json({ error: error.message || 'Failed to publish' });
+        res.status(500).json({ error: detail });
     }
 });
 const PORT = process.env.PORT || 3003;
-app.listen(PORT, () => console.log(`Publishing Service listening on port ${PORT}`));
+const server = app.listen(PORT, () => console.log(`Publishing Service listening on port ${PORT}`));
+// Crucial for long video uploads and polling loops: prevent Node 18/20/22 default 60s headersTimeout
+server.headersTimeout = 600_000; // 10 minutes
+server.requestTimeout = 600_000; // 10 minutes
+server.keepAliveTimeout = 120_000; // 2 minutes
+server.timeout = 600_000; // 10 minutes

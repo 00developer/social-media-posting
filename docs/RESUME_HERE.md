@@ -2,15 +2,20 @@
 
 Written 2026-09-21 ~19:30 IST at the end of a long session. **Read this first**, then continue with "Next steps". Everything here was checked against the code/DB at that time; where something was *not* verified it says so.
 
-## 00. START HERE TOMORROW (state at end of 2026-09-22)
-**Latest state supersedes older text below** (§0, §2.2, §2.3 and §3 are historical: Step 3 is fully done, S3.5/S3.6 finished, the 404 dev-server issue was a one-off).
-- ✅ Done and verified: Calendar Steps 1–3; Reels 9:16 fix; header notification bell (migration `20260922000000` applied by owner); **failure notifications + automatic retries + Retry button** (details: §2.5, BUSINESS_LOGIC §5, KNOWN_ISSUES #6/#8/#45–49, PROGRESS_REPORT).
-- Tests at hand-over: **227 unit tests** (`cd apps/web && npm test`), `tsc` + ESLint clean, `node docs/dev-scripts/retry-e2e.js` **42 PASS** (needs worker + notification-service running; writes scratch data to Supabase/Redis and cleans up, ~3 min).
-- 🟡 **Owner to do first (browser, not yet verified by anyone):** (1) timeline: a failed post shows the per-platform error + **"Retry failed (n)"**; an automatically-retried job shows an amber "Attempt n/3 failed… Retrying automatically" note; (2) calendar: click a failed event → modal has **"Retry failed platforms (n)"**; (3) bell shows the failure notification. KNOWN_ISSUES #49.
-- ⏳ Not started (needs a plan + owner approval first): **Calendar Step 4** (drag to reschedule, §2.4), **Step 5** (drafts view). Whole-project backlog: `docs/PENDING_WORK.md`.
-- ⚠ Still open: the real test post `85e737cb…` publishes **23 Sep 10:00 IST** to real accounts (landscape variants, uploaded before the 9:16 fix); its 4 queued jobs predate the retry change and get the full 3 attempts (#48). Step 2's "calendar-created post publishes at its time" was never observed.
-- Nothing is committed to git. Services must be running (worker, notification, scheduling, post, publishing, media); check with `node docs/dev-scripts/queue.js`.
-- Never `next build` while `next dev` runs. Never build retry logic on BullMQ `attemptsMade` (use `job.data.failures`).
+## 00. START HERE NEXT (state at 2026-10-13, Commit `9b78c95`)
+**Latest state supersedes older text below:**
+- ✅ **Committed & Pushed to GitHub (`main`, commit `9b78c95`)**:
+  1. **Redis IPv4 DNS Resolution:** Fixed `ENOTFOUND` crashes across all services via `dns.setDefaultResultOrder?.('ipv4first')` in `packages/shared`, plus ioredis retry backoff and unhandled exception shielding.
+  2. **Draft Video Publishing:** Added `isVideo` detection guards across dashboard, `scheduling-service`, and `publishing-service` so video drafts trigger Reels/Video APIs instead of failing as photos.
+  3. **Timeline Top 3 Posts + Load More:** Updated Posts page to display top 3 recent posts by default with an interactive "Load More Posts" button.
+  4. **Post Preview Alignment:** Fixed clipping of long captions in `PostComposer.tsx` and `EditPostModal.tsx` by using `items-start`.
+  5. **IDE Lint Cleanup:** Cleared all 5 warnings in `PostComposer.tsx` (`useEffect`, `stroke-3`, `max-h-128`, conflicting `block`).
+- ✅ **Tests & Verification:**
+  - All **263 unit tests pass** (`npm --prefix apps/web test`).
+  - All backend service builds (`shared`, `scheduling-service`, `publishing-service`, `worker`, `post-service`, `notification-service`, `analytics-service`) pass with 0 errors.
+  - Redis Cloud ping verified: `PONG`.
+- ⏳ **On Hold / Pending:**
+  - **Calendar Step 4 (Drag to reschedule):** Architecture and implementation plan documented in `docs/CALENDAR_STEP4_PLAN.md` (deferred per user request).
 
 ## 0. TL;DR
 - We are building the **Calendar** feature of SocialPush step by step (spec: `imple/CALENDAR_INTEGRATION_DEVELOPMENT.md` + `imple/CALENDAR_ANTIGRAVITY_PROMPT.md`).

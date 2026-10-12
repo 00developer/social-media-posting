@@ -1,3 +1,39 @@
+# Bug Fixes & Progress Report (2026-10-13)
+
+## 1. Redis IPv4-First Resolution & Transient Drop Resilience
+- **Symptom:** Terminal flooded with `getaddrinfo ENOTFOUND neostylish-famed-simple-90270.db.redis.io` errors across `worker`, `notification-service`, and `analytics-service` during Wi-Fi or ISP network micro-drops.
+- **Root Cause:**
+  1. Redis Cloud publishes both IPv6 (NAT64) and IPv4 (`65.2.124.158`) DNS records.
+  2. Node.js 17+ defaults to verbatim DNS resolution, prioritizing IPv6. On Indian ISPs (Jio, Airtel, ACT) where IPv6/NAT64 routing drops, Node throws `ENOTFOUND`.
+  3. `ioredis` had no custom `retryStrategy`, and background services logged uncaught exceptions for transient connection drops.
+- **Fix (Commit `9b78c95`):**
+  - **IPv4-First Enforcement:** Added `dns.setDefaultResultOrder?.('ipv4first')` in `packages/shared/src/index.ts` so all services resolve IPv4 directly.
+  - **Reconnection Resilience:** Added exponential backoff `retryStrategy` (up to 3s), `connectTimeout: 15000`, `reconnectOnError`, and client-level error listeners to `getRedisConnection`.
+  - **Exception Shielding:** Shielded `worker`, `notification-service`, `analytics-service`, and `scheduling-service` uncaught handlers from noisy transient `ENOTFOUND`, `ECONNRESET`, and `ETIMEDOUT` errors.
+
+## 2. Draft Video Publishing Flow Fixes
+- **Symptom:** Publishing a drafted video post from the Timeline failed or published as a static photo container on Facebook/Instagram.
+- **Fix:**
+  - Added video detection guards in `apps/web/src/app/dashboard/posts/page.tsx`, `services/scheduling-service/src/index.ts`, and `services/publishing-service/src/index.ts`.
+  - Explicitly route video drafts to Reels/Video API pipelines (`isVideo: true`, `contentType: 'reel'`).
+
+## 3. Posts Timeline Top 3 + Load More
+- **Symptom:** Posts Timeline displayed all posts at once, creating excessive vertical scrolling.
+- **Fix:**
+  - Default view displays the **3 most recent posts**.
+  - Added an Obsidian-styled interactive **"Load More Posts (+X remaining)"** button that reveals the remaining history on click.
+
+## 4. Post Preview Alignment & IDE Lint Cleanup
+- **Symptom:** Long post captions in composer preview clipped at the top because of `items-center` centering inside the scrollable container.
+- **Fix:**
+  - Replaced `items-center` with `items-start` in both `PostComposer.tsx` and `EditPostModal.tsx`.
+  - Cleaned up all 5 IDE warnings in `PostComposer.tsx`: removed unused `useEffect`, converted `stroke-[3]` to `stroke-3`, `max-h-[32rem]` to `max-h-128`, and removed conflicting `block` from flex label.
+
+## 5. Calendar Step 4 (Drag-to-Reschedule) Planning
+- Designed complete architecture in `docs/CALENDAR_STEP4_PLAN.md` covering `PATCH /api/v1/posts/:postId/reschedule`, FullCalendar `eventDrop`, BullMQ `job.changeDelay()`, and optimistic updates (currently on hold per user preference).
+
+---
+
 # Bug Fixes & Progress Report (2026-10-12)
 
 ## 1. Publishing Timeout, Retries & Threads "fetch failed" Resolution

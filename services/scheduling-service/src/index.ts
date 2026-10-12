@@ -10,6 +10,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+process.on('uncaughtException', (err: any) => {
+  if (err?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT') return;
+  console.error('[SchedulingService] Uncaught Exception:', err.message);
+});
+process.on('unhandledRejection', (err: any) => {
+  if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.cause?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT') return;
+  console.error('[SchedulingService] Unhandled Rejection:', err?.message || err);
+});
+
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 const redisConnection = getRedisConnection(process.env.REDIS_URL || 'redis://localhost:6379');
 const publishQueue = getQueue(redisConnection);
@@ -33,7 +42,7 @@ app.post('/api/v1/schedules', async (req, res) => {
   if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
   const userId = authed.userId;
 
-  const { data: post } = await supabase.from('posts').select('team_id').eq('id', postId).single();
+  const { data: post } = await supabase.from('posts').select('team_id, media_url').eq('id', postId).single();
   if (!post) return res.status(404).json({ error: 'Post not found' });
 
   const { data: member } = await supabase.from('team_members').select('role').eq('team_id', post.team_id).eq('user_id', userId).single();
@@ -45,6 +54,15 @@ app.post('/api/v1/schedules', async (req, res) => {
   
   if (isNaN(scheduledDate.getTime()) || scheduledDate < fiveMinutesAgo) {
     return res.status(400).json({ error: 'Invalid or past date' });
+  }
+
+  let resolvedContentType = contentType;
+  if (!resolvedContentType || resolvedContentType === 'post') {
+    try {
+      const media = JSON.parse(post.media_url || '{}');
+      const hasVideo = Object.values(media).some((url: any) => typeof url === 'string' && (/\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i.test(url) || url.includes('/video')));
+      if (hasVideo) resolvedContentType = 'reel';
+    } catch {}
   }
 
   // Tracks what this request has created so far, so a failure partway through (e.g. platform 3 of 5) can be
@@ -71,7 +89,7 @@ app.post('/api/v1/schedules', async (req, res) => {
         user_id: userId,
         platform,
         status: 'scheduled',
-        content_type: contentType || 'post'
+        content_type: resolvedContentType || 'post'
       }).select().single();
       if (jobError) throw jobError;
       createdJobs.push(jobRecord.id);
@@ -133,7 +151,7 @@ app.post('/api/v1/posts/:postId/retry', async (req, res) => {
   if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
   const userId = authed.userId;
 
-  const { data: post, error: postError } = await supabase.from('posts').select('id, team_id').eq('id', postId).maybeSingle();
+  const { data: post, error: postError } = await supabase.from('posts').select('id, team_id, media_url').eq('id', postId).maybeSingle();
   if (postError) return res.status(500).json({ error: postError.message });
   if (!post) return res.status(404).json({ error: 'Post not found' });
 
@@ -150,6 +168,12 @@ app.post('/api/v1/posts/:postId/retry', async (req, res) => {
     return res.status(409).json({ error: 'Nothing to retry: this post has no failed platforms.', code: 'NOTHING_TO_RETRY' });
   }
 
+  let postHasVideo = false;
+  try {
+    const media = JSON.parse(post.media_url || '{}');
+    postHasVideo = Object.values(media).some((url: any) => typeof url === 'string' && (/\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i.test(url) || url.includes('/video')));
+  } catch {}
+
   const created: Array<{ id: string; platform: string }> = [];
   try {
     for (const old of failed) {
@@ -158,7 +182,7 @@ app.post('/api/v1/posts/:postId/retry', async (req, res) => {
         user_id: userId,
         platform: old.platform,
         status: 'scheduled',
-        content_type: old.content_type || 'post'
+        content_type: (postHasVideo || old.content_type === 'reel') ? 'reel' : (old.content_type || 'post')
       }).select().single();
       if (error) throw error;
       created.push({ id: row.id, platform: row.platform });

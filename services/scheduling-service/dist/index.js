@@ -13,6 +13,16 @@ dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../../.env') 
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
+process.on('uncaughtException', (err) => {
+    if (err?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT')
+        return;
+    console.error('[SchedulingService] Uncaught Exception:', err.message);
+});
+process.on('unhandledRejection', (err) => {
+    if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.cause?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT')
+        return;
+    console.error('[SchedulingService] Unhandled Rejection:', err?.message || err);
+});
 const supabase = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const redisConnection = (0, shared_1.getRedisConnection)(process.env.REDIS_URL || 'redis://localhost:6379');
 const publishQueue = (0, shared_1.getQueue)(redisConnection);
@@ -24,11 +34,15 @@ const PUBLISH_JOB_OPTIONS = {
     removeOnFail: { age: 14 * 24 * 3600, count: 500 },
 };
 app.post('/api/v1/schedules', async (req, res) => {
-    const { userId, postId, platforms, scheduledAt, timezone, contentType } = req.body;
-    if (!userId || !postId || !platforms || !platforms.length || !scheduledAt || !timezone) {
+    const { postId, platforms, scheduledAt, timezone, contentType } = req.body;
+    if (!postId || !platforms || !platforms.length || !scheduledAt || !timezone) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
-    const { data: post } = await supabase.from('posts').select('team_id').eq('id', postId).single();
+    const authed = await (0, shared_1.requireUser)(req, supabase);
+    if ('error' in authed)
+        return res.status(authed.status).json({ error: authed.error });
+    const userId = authed.userId;
+    const { data: post } = await supabase.from('posts').select('team_id, media_url').eq('id', postId).single();
     if (!post)
         return res.status(404).json({ error: 'Post not found' });
     const { data: member } = await supabase.from('team_members').select('role').eq('team_id', post.team_id).eq('user_id', userId).single();
@@ -40,28 +54,45 @@ app.post('/api/v1/schedules', async (req, res) => {
     if (isNaN(scheduledDate.getTime()) || scheduledDate < fiveMinutesAgo) {
         return res.status(400).json({ error: 'Invalid or past date' });
     }
+    let resolvedContentType = contentType;
+    if (!resolvedContentType || resolvedContentType === 'post') {
+        try {
+            const media = JSON.parse(post.media_url || '{}');
+            const hasVideo = Object.values(media).some((url) => typeof url === 'string' && (/\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i.test(url) || url.includes('/video')));
+            if (hasVideo)
+                resolvedContentType = 'reel';
+        }
+        catch { }
+    }
+    // Tracks what this request has created so far, so a failure partway through (e.g. platform 3 of 5) can be
+    // rolled back cleanly instead of leaving platforms 1-2 live-scheduled while the client sees a 500 and the post
+    // stuck un-scheduled - a retry from the client would then re-queue 1-2 a second time on top of the surviving rows.
+    const createdSchedules = [];
+    const createdJobs = [];
     try {
         for (const platform of platforms) {
             // Insert schedule record
-            const { error: scheduleError } = await supabase.from('schedules').insert({
+            const { data: scheduleRow, error: scheduleError } = await supabase.from('schedules').insert({
                 post_id: postId,
                 user_id: userId,
                 platform,
                 scheduled_at: scheduledDate.toISOString(),
                 timezone
-            });
+            }).select().single();
             if (scheduleError)
                 throw scheduleError;
+            createdSchedules.push(scheduleRow.id);
             // Insert publish job record
             const { data: jobRecord, error: jobError } = await supabase.from('publish_jobs').insert({
                 post_id: postId,
                 user_id: userId,
                 platform,
                 status: 'scheduled',
-                content_type: contentType || 'post'
+                content_type: resolvedContentType || 'post'
             }).select().single();
             if (jobError)
                 throw jobError;
+            createdJobs.push(jobRecord.id);
             // Add to BullMQ
             const delay = scheduledDate.getTime() - Date.now();
             await publishQueue.add('publish-post', {
@@ -77,6 +108,17 @@ app.post('/api/v1/schedules', async (req, res) => {
     }
     catch (err) {
         console.error(err);
+        for (const jobId of createdJobs) {
+            try {
+                const queued = await publishQueue.getJob(jobId);
+                await queued?.remove();
+            }
+            catch { /* already running: harmless once its row is gone */ }
+        }
+        if (createdJobs.length > 0)
+            await supabase.from('publish_jobs').delete().in('id', createdJobs);
+        if (createdSchedules.length > 0)
+            await supabase.from('schedules').delete().in('id', createdSchedules);
         res.status(500).json({ error: err.message });
     }
 });
@@ -98,14 +140,18 @@ function latestJobsPerPlatform(jobs) {
 // queued with a new BullMQ id; the old failed rows stay as history.
 app.post('/api/v1/posts/:postId/retry', async (req, res) => {
     const { postId } = req.params;
-    const { userId, platforms } = req.body ?? {};
-    if (!UUID_RE.test(postId) || typeof userId !== 'string' || !UUID_RE.test(userId)) {
+    const { platforms } = req.body ?? {};
+    if (!UUID_RE.test(postId)) {
         return res.status(400).json({ error: 'Missing or invalid id' });
     }
     if (platforms !== undefined && (!Array.isArray(platforms) || platforms.some((p) => typeof p !== 'string'))) {
         return res.status(400).json({ error: 'platforms must be an array of strings' });
     }
-    const { data: post, error: postError } = await supabase.from('posts').select('id, team_id').eq('id', postId).maybeSingle();
+    const authed = await (0, shared_1.requireUser)(req, supabase);
+    if ('error' in authed)
+        return res.status(authed.status).json({ error: authed.error });
+    const userId = authed.userId;
+    const { data: post, error: postError } = await supabase.from('posts').select('id, team_id, media_url').eq('id', postId).maybeSingle();
     if (postError)
         return res.status(500).json({ error: postError.message });
     if (!post)
@@ -124,6 +170,12 @@ app.post('/api/v1/posts/:postId/retry', async (req, res) => {
     if (failed.length === 0) {
         return res.status(409).json({ error: 'Nothing to retry: this post has no failed platforms.', code: 'NOTHING_TO_RETRY' });
     }
+    let postHasVideo = false;
+    try {
+        const media = JSON.parse(post.media_url || '{}');
+        postHasVideo = Object.values(media).some((url) => typeof url === 'string' && (/\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i.test(url) || url.includes('/video')));
+    }
+    catch { }
     const created = [];
     try {
         for (const old of failed) {
@@ -132,7 +184,7 @@ app.post('/api/v1/posts/:postId/retry', async (req, res) => {
                 user_id: userId,
                 platform: old.platform,
                 status: 'scheduled',
-                content_type: old.content_type || 'post'
+                content_type: (postHasVideo || old.content_type === 'reel') ? 'reel' : (old.content_type || 'post')
             }).select().single();
             if (error)
                 throw error;

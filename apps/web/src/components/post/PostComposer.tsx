@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useDashboard, type Post } from '@/components/DashboardProvider';
 import { PlatformPreviewCard } from '@/components/post/PlatformPreviewCard';
 import { MEDIA_SERVICE_URL, POST_SERVICE_URL, SCHEDULING_SERVICE_URL } from '@/lib/apiUrls';
@@ -451,7 +451,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                     : 'bg-slate-900/80 text-slate-300 border-slate-800 hover:bg-slate-800 hover:border-slate-700 shadow-2xs'
                 }`}
               >
-                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                {isSelected && <Check className="w-3 h-3 stroke-3" />}
                 <span>{p.label}</span>
               </button>
             );
@@ -534,7 +534,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                     ))}
                   </div>
                   
-                  <div className={variant === 'modal' ? 'bg-[#090d16] p-4 flex items-center justify-center' : 'flex-1 overflow-y-auto max-h-112.5 bg-[#090d16] p-4 flex items-center justify-center custom-scrollbar'}>
+                  <div className={variant === 'modal' ? 'bg-[#090d16] p-4 flex items-start justify-center' : 'flex-1 overflow-y-auto max-h-128 bg-[#090d16] p-4 flex items-start justify-center custom-scrollbar'}>
                     <PlatformPreviewCard platform={activePreviewPlatform} content={newPostContent} mediaUrl={mediaPreview} isVideo={mediaFile?.type.startsWith('video/')} contentType={contentType} />
                   </div>
                 </>
@@ -550,7 +550,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
 
         {/* Schedule Field */}
         <div>
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             Schedule (Optional)
           </label>

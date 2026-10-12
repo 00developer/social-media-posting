@@ -24,11 +24,11 @@ const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SE
 });
 
 process.on('uncaughtException', (err: any) => {
-  if (err.code === 'ECONNRESET') return;
+  if (err?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT') return;
   console.error('[Worker] Uncaught Exception:', err.message);
 });
 process.on('unhandledRejection', (err: any) => {
-  if (err.code === 'ECONNRESET' || err.cause?.code === 'ECONNRESET') return;
+  if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.cause?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT') return;
   console.error('[Worker] Unhandled Rejection:', err.message || err);
 });
 const redisConnection = getRedisConnection(process.env.REDIS_URL || 'redis://localhost:6379');
@@ -194,6 +194,7 @@ worker.on('failed', (job, err) => {
 });
 
 worker.on('error', (err) => {
-  if ((err as any).code === 'ECONNRESET') return;
+  const code = (err as any)?.code;
+  if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ETIMEDOUT') return;
   console.error(`[Worker] Internal error:`, err.message);
 });

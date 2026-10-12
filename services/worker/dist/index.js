@@ -17,12 +17,12 @@ const supabase = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, proce
     }
 });
 process.on('uncaughtException', (err) => {
-    if (err.code === 'ECONNRESET')
+    if (err?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT')
         return;
     console.error('[Worker] Uncaught Exception:', err.message);
 });
 process.on('unhandledRejection', (err) => {
-    if (err.code === 'ECONNRESET' || err.cause?.code === 'ECONNRESET')
+    if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.cause?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT')
         return;
     console.error('[Worker] Unhandled Rejection:', err.message || err);
 });
@@ -178,7 +178,8 @@ worker.on('failed', (job, err) => {
     console.log(`[Worker] ${job?.id} has failed with ${err.message}`);
 });
 worker.on('error', (err) => {
-    if (err.code === 'ECONNRESET')
+    const code = err?.code;
+    if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ETIMEDOUT')
         return;
     console.error(`[Worker] Internal error:`, err.message);
 });

@@ -198,7 +198,7 @@ export function EditPostModal({ post, userId, teamId, isViewer, onClose, onSaved
                   ))}
                 </div>
               )}
-              <div className="bg-[#090D16] p-5 flex items-center justify-center">
+              <div className="bg-[#090D16] p-5 flex items-start justify-center">
                 <PlatformPreviewCard
                   platform={activePreview}
                   content={draft}

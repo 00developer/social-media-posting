@@ -21,16 +21,46 @@ exports.NOTIFICATIONS_QUEUE_NAME = exports.PUBLISH_QUEUE_NAME = void 0;
 exports.getRedisConnection = getRedisConnection;
 exports.getQueue = getQueue;
 exports.getNotificationsQueue = getNotificationsQueue;
+const dns_1 = __importDefault(require("dns"));
 const bullmq_1 = require("bullmq");
 const ioredis_1 = __importDefault(require("ioredis"));
+// Force Node.js to resolve IPv4 addresses first.
+// Prevents ENOTFOUND / ETIMEDOUT when resolving Redis Cloud hostnames on networks where IPv6 / NAT64 drops.
+try {
+    dns_1.default.setDefaultResultOrder?.('ipv4first');
+}
+catch {
+    // Ignored if not supported in the running Node runtime
+}
 exports.PUBLISH_QUEUE_NAME = 'publish-queue';
 exports.NOTIFICATIONS_QUEUE_NAME = 'notifications-queue';
 function getRedisConnection(url) {
     const isTls = url.startsWith('rediss://') || url.includes('upstash');
-    return new ioredis_1.default(url, {
+    const redis = new ioredis_1.default(url, {
         maxRetriesPerRequest: null,
+        connectTimeout: 15000,
+        enableReadyCheck: false,
+        retryStrategy(times) {
+            // Reconnect with exponential backoff up to 3s to stay alive across Wi-Fi or DNS hiccups
+            const delay = Math.min(times * 150, 3000);
+            return delay;
+        },
+        reconnectOnError(err) {
+            const targetErrors = ['READONLY', 'ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND'];
+            return targetErrors.some(target => (err.message || '').includes(target));
+        },
         ...(isTls && { tls: { rejectUnauthorized: false } })
     });
+    redis.on('error', (err) => {
+        // Avoid noisy uncaught crashes on transient network drops while ioredis reconnects in background
+        const code = err?.code || '';
+        const msg = err?.message || '';
+        if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ETIMEDOUT' || msg.includes('ENOTFOUND')) {
+            return;
+        }
+        console.error('[Redis Client Error]', msg || err);
+    });
+    return redis;
 }
 function getQueue(connection) {
     return new bullmq_1.Queue(exports.PUBLISH_QUEUE_NAME, { connection });

@@ -12,12 +12,12 @@ dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../../.env') 
 // Upstash drops idle connections (ECONNRESET). Without these guards an unhandled 'error' event crashed this service
 // and every later notification (success or failure) just piled up in the queue, unread by anyone.
 process.on('uncaughtException', (err) => {
-    if (err.code === 'ECONNRESET')
+    if (err?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT')
         return;
     console.error('[NotificationService] Uncaught Exception:', err.message);
 });
 process.on('unhandledRejection', (err) => {
-    if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET')
+    if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.cause?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT')
         return;
     console.error('[NotificationService] Unhandled Rejection:', err?.message || err);
 });
@@ -50,7 +50,8 @@ worker.on('failed', (job, err) => {
     console.log(`[NotificationService] Job ${job?.id} failed with ${err.message}`);
 });
 worker.on('error', (err) => {
-    if (err.code === 'ECONNRESET')
+    const code = err?.code;
+    if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ETIMEDOUT')
         return;
     console.error('[NotificationService] Internal error:', err.message);
 });

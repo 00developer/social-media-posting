@@ -133,7 +133,9 @@ class FacebookAdapter implements PlatformAdapter {
       mediaUrl = media.facebook || null;
     } catch (e) {}
     
-    if (contentType === 'reel') {
+    const isVideo = contentType === 'reel' || !!(mediaUrl && (/\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i.test(mediaUrl) || mediaUrl.includes('/video')));
+
+    if (isVideo) {
       if (!mediaUrl) throw new Error("Facebook Reels requires a video to publish.");
       
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -252,9 +254,10 @@ class InstagramAdapter implements PlatformAdapter {
     if (!mediaUrl) throw new Error("Instagram requires an image or video to publish.");
     
     // 1. Create Media Container
+    const isVideo = contentType === 'reel' || !!(mediaUrl && (/\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i.test(mediaUrl) || mediaUrl.includes('/video')));
     const body: any = { caption: post.content, access_token: decryptedToken };
     
-    if (contentType === 'reel') {
+    if (isVideo) {
       body.media_type = 'REELS';
       body.video_url = mediaUrl;
       body.share_to_feed = true;
@@ -271,7 +274,7 @@ class InstagramAdapter implements PlatformAdapter {
     if (containerData.error) throw new Error(containerData.error.message);
     
     // 2. Poll for Status if it's a video/reel
-    if (contentType === 'reel' || !body.image_url) {
+    if (isVideo || !body.image_url) {
       let isReady = false;
       let consecutivePollErrors = 0;
       for (let i = 0; i < 36; i++) { // Poll up to 3 minutes (36 * 5s)

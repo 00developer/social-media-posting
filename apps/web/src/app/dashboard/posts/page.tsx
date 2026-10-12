@@ -51,14 +51,20 @@ export default function PostsPage() {
   const [previewPost, setPreviewPost] = useState<Post | null>(null);
   const [optimisticPost, setOptimisticPost] = useState<Partial<Post> | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'scheduled' | 'failed' | 'draft'>('all');
+  const [visibleCount, setVisibleCount] = useState(3);
   const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({});
+
+  const handleFilterChange = (filter: 'all' | 'published' | 'scheduled' | 'failed' | 'draft') => {
+    setStatusFilter(filter);
+    setVisibleCount(3);
+  };
 
   const toggleErrorExpand = (e: React.MouseEvent, key: string) => {
     e.stopPropagation();
     setExpandedErrors(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handlePublish = async (postId: string, presetPlatforms: string[] = []) => {
+  const handlePublish = async (postId: string, presetPlatforms: string[] = [], postContentType: 'post' | 'reel' = 'post') => {
     if (!user || !activeTeam) return;
 
     let platforms = presetPlatforms;
@@ -77,7 +83,8 @@ export default function PostsPage() {
           postId: postId,
           platforms: platforms,
           scheduledAt: new Date().toISOString(),
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          contentType: postContentType
         })
       });
       const data = await res.json();
@@ -125,6 +132,9 @@ export default function PostsPage() {
     return p.status === statusFilter;
   });
 
+  const displayedPosts = filteredPosts.slice(0, visibleCount);
+  const hasMore = visibleCount < filteredPosts.length;
+
   const totalCount = posts.length;
   const publishedCount = posts.filter(p => p.status === 'published').length;
   const scheduledCount = posts.filter(p => p.status === 'scheduled').length;
@@ -143,7 +153,7 @@ export default function PostsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <button
             type="button"
-            onClick={() => setStatusFilter('all')}
+            onClick={() => handleFilterChange('all')}
             className={`p-3.5 rounded-xl border text-left cursor-pointer transition-colors ${
               statusFilter === 'all'
                 ? 'bg-slate-800 text-white border-slate-700'
@@ -161,7 +171,7 @@ export default function PostsPage() {
 
           <button
             type="button"
-            onClick={() => setStatusFilter('published')}
+            onClick={() => handleFilterChange('published')}
             className={`p-3.5 rounded-xl border text-left cursor-pointer transition-colors ${
               statusFilter === 'published'
                 ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
@@ -179,7 +189,7 @@ export default function PostsPage() {
 
           <button
             type="button"
-            onClick={() => setStatusFilter('scheduled')}
+            onClick={() => handleFilterChange('scheduled')}
             className={`p-3.5 rounded-xl border text-left cursor-pointer transition-colors ${
               statusFilter === 'scheduled'
                 ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
@@ -197,7 +207,7 @@ export default function PostsPage() {
 
           <button
             type="button"
-            onClick={() => setStatusFilter('failed')}
+            onClick={() => handleFilterChange('failed')}
             className={`p-3.5 rounded-xl border text-left cursor-pointer transition-colors ${
               statusFilter === 'failed'
                 ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
@@ -219,7 +229,7 @@ export default function PostsPage() {
           <div className="flex items-center gap-2">
             <h2 className="text-xs font-semibold text-white tracking-tight">Posts Timeline</h2>
             <span className="text-[10px] font-medium text-slate-400 bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700/60">
-              {filteredPosts.length} posts
+              {displayedPosts.length} of {filteredPosts.length} posts
             </span>
           </div>
 
@@ -229,7 +239,7 @@ export default function PostsPage() {
               <button
                 key={tab}
                 type="button"
-                onClick={() => setStatusFilter(tab)}
+                onClick={() => handleFilterChange(tab)}
                 className={`px-2.5 py-1 rounded-lg capitalize transition-colors whitespace-nowrap text-xs ${
                   statusFilter === tab
                     ? 'bg-slate-800 text-white font-medium'
@@ -258,7 +268,7 @@ export default function PostsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredPosts.map(post => {
+            {displayedPosts.map(post => {
               let mediaObj: Record<string, string> | null = null;
               try {
                 if (post.media_url && (post.media_url as string) !== '{}') {
@@ -363,7 +373,12 @@ export default function PostsPage() {
                     <div className="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       {post.status === 'draft' && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); handlePublish(post.id, cardPlatforms); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const isVideoMedia = !!(mediaObj && Object.values(mediaObj).some(url => typeof url === 'string' && (/\.(mp4|mov|webm|m4v)(\?.*)?$/i.test(url) || url.includes('/video'))));
+                            const postContentType = (isVideoMedia || getPostContentType(post) === 'reel') ? 'reel' : 'post';
+                            handlePublish(post.id, cardPlatforms, postContentType);
+                          }}
                           disabled={isPublishing || activeTeam?.role === 'viewer'}
                           className="inline-flex items-center gap-1 bg-white text-slate-950 px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all disabled:opacity-50 shadow-md"
                         >
@@ -478,6 +493,22 @@ export default function PostsPage() {
                 </div>
               );
             })}
+
+            {hasMore && (
+              <div className="pt-2 pb-1 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount(prev => prev + 3)}
+                  className="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-800 hover:border-slate-700 text-xs font-semibold shadow-lg hover:shadow-indigo-500/10 transition-all cursor-pointer group"
+                >
+                  <ChevronDown className="w-4 h-4 text-indigo-400 group-hover:translate-y-0.5 transition-transform" />
+                  <span>Load More Posts</span>
+                  <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700/60 font-medium">
+                    +{filteredPosts.length - visibleCount} remaining
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

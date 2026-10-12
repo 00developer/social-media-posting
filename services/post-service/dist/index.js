@@ -10,17 +10,32 @@ const path_1 = __importDefault(require("path"));
 const supabase_js_1 = require("@supabase/supabase-js");
 const shared_1 = require("@socialpush/shared");
 const editability_1 = require("./editability");
+const ai_1 = require("@socialpush/ai");
 dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../../.env') });
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
+process.on('uncaughtException', (err) => {
+    if (err?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT')
+        return;
+    console.error('[PostService] Uncaught Exception:', err.message);
+});
+process.on('unhandledRejection', (err) => {
+    if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.cause?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT')
+        return;
+    console.error('[PostService] Unhandled Rejection:', err?.message || err);
+});
 const supabase = (0, supabase_js_1.createClient)(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const redis = shared_1.upstashRedis || (0, shared_1.getRedisConnection)(process.env.REDIS_URL || 'redis://localhost:6379');
 app.get('/api/v1/posts', async (req, res) => {
-    const { userId, teamId, from, to } = req.query;
-    if (!userId || !teamId) {
+    const { teamId, from, to } = req.query;
+    if (!teamId) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
+    const authed = await (0, shared_1.requireUser)(req, supabase);
+    if ('error' in authed)
+        return res.status(authed.status).json({ error: authed.error });
+    const userId = authed.userId;
     // Authorize user
     let role = await (0, shared_1.getCachedTeamRole)(teamId, userId);
     if (!role) {
@@ -47,12 +62,12 @@ app.get('/api/v1/posts', async (req, res) => {
             return res.json({ success: true, data: feed, source: 'cache' });
         }
         // Cache Miss - Fetch from DB
-        // The range (calendar) query leaves out the `user:user_id(email)` embed: posts.user_id
-        // references auth.users, which PostgREST cannot embed ("Could not find a relationship
-        // between 'posts' and 'user_id'"), and the calendar does not use the author's email.
+        // No `user:user_id(email)` embed on either query: posts.user_id references auth.users, which
+        // PostgREST cannot embed ("Could not find a relationship between 'posts' and 'user_id'"), and
+        // no caller uses the author's email.
         const selectClause = isRangeQuery
             ? '*, publish_jobs(*), schedules!inner(*)'
-            : '*, user:user_id(email), publish_jobs(*), schedules(*)';
+            : '*, publish_jobs(*), schedules(*)';
         let query = supabase.from('posts')
             .select(selectClause)
             .eq('team_id', teamId);
@@ -81,10 +96,14 @@ app.get('/api/v1/posts', async (req, res) => {
     }
 });
 app.post('/api/v1/posts', async (req, res) => {
-    const { userId, teamId, content, mediaUrl } = req.body;
-    if (!userId || !teamId || !content) {
+    const { teamId, content, mediaUrl } = req.body;
+    if (!teamId || !content) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
+    const authed = await (0, shared_1.requireUser)(req, supabase);
+    if ('error' in authed)
+        return res.status(authed.status).json({ error: authed.error });
+    const userId = authed.userId;
     // 1. Enforce RBAC using Role Cache
     let role = await (0, shared_1.getCachedTeamRole)(teamId, userId);
     let plan = 'free';
@@ -109,7 +128,11 @@ app.post('/api/v1/posts', async (req, res) => {
         if (teamData)
             plan = teamData.plan;
     }
-    // 2. Enforce Billing limits (Increased to 500 for testing)
+    // 2. Enforce Billing limits (Increased to 500 for testing). This pre-check is only a fast path to avoid an
+    // obviously-over-limit request reaching the DB; the real, race-free enforcement is the
+    // enforce_free_plan_post_limit trigger on posts (see supabase/migrations/20260928000001_atomic_usage_limits.sql)
+    // - two requests arriving at the same instant could both pass this SELECT-based check before either INSERT
+    // lands, but the trigger serializes them with an advisory lock so only one can actually get through.
     if (plan === 'free') {
         const { count } = await supabase.from('posts').select('*', { count: 'exact', head: true }).eq('team_id', teamId);
         if (count !== null && count >= 500) {
@@ -123,8 +146,12 @@ app.post('/api/v1/posts', async (req, res) => {
         media_url: mediaUrl,
         status: 'draft'
     }).select().single();
-    if (error)
+    if (error) {
+        if (error.message?.includes('FREE_PLAN_LIMIT_REACHED')) {
+            return res.status(402).json({ error: 'Billing limit reached: Free plan allows max 500 posts.' });
+        }
         return res.status(500).json({ error: error.message });
+    }
     // Invalidate feed cache so new post appears immediately
     try {
         const cacheKey = `feed:${teamId}`;
@@ -142,10 +169,14 @@ app.post('/api/v1/posts', async (req, res) => {
 });
 app.delete('/api/v1/posts/:id', async (req, res) => {
     const { id } = req.params;
-    const { userId, teamId } = req.query;
-    if (!userId || !teamId) {
+    const { teamId } = req.query;
+    if (!teamId) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
+    const authed = await (0, shared_1.requireUser)(req, supabase);
+    if ('error' in authed)
+        return res.status(authed.status).json({ error: authed.error });
+    const userId = authed.userId;
     let role = await (0, shared_1.getCachedTeamRole)(teamId, userId);
     if (!role) {
         const { data: member } = await supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', userId).single();
@@ -179,10 +210,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // a job runs. Refused once any platform's latest job is processing or completed.
 app.patch('/api/v1/posts/:id', async (req, res) => {
     const { id } = req.params;
-    const { userId, teamId, content } = req.body ?? {};
-    if (!UUID_RE.test(id) || typeof userId !== 'string' || !UUID_RE.test(userId) || typeof teamId !== 'string' || !UUID_RE.test(teamId)) {
+    const { teamId, content } = req.body ?? {};
+    if (!UUID_RE.test(id) || typeof teamId !== 'string' || !UUID_RE.test(teamId)) {
         return res.status(400).json({ error: 'Missing or invalid id' });
     }
+    const authed = await (0, shared_1.requireUser)(req, supabase);
+    if ('error' in authed)
+        return res.status(authed.status).json({ error: authed.error });
+    const userId = authed.userId;
     // Role: cache first, then the DB (same lookup as the other endpoints)
     let role = await (0, shared_1.getCachedTeamRole)(teamId, userId);
     if (!role) {
@@ -236,6 +271,48 @@ app.patch('/api/v1/posts/:id', async (req, res) => {
     }
     catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+// AI Assistant: turns a short prompt into a caption, a longer paragraph and hashtags, for the composer's
+// "Generate" button. The result is only a draft - nothing here saves or publishes anything.
+app.post('/api/v1/ai/caption', async (req, res) => {
+    const { teamId, prompt, platform, imageUrl } = req.body ?? {};
+    if (typeof teamId !== 'string')
+        return res.status(400).json({ error: 'Missing required fields' });
+    const cleanPrompt = typeof prompt === 'string' ? prompt.trim() : '';
+    if (!cleanPrompt)
+        return res.status(400).json({ error: 'Enter a prompt to generate from.' });
+    const authed = await (0, shared_1.requireUser)(req, supabase);
+    if ('error' in authed)
+        return res.status(authed.status).json({ error: authed.error });
+    const userId = authed.userId;
+    let role = await (0, shared_1.getCachedTeamRole)(teamId, userId);
+    if (!role) {
+        const { data: member } = await supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', userId).maybeSingle();
+        if (member) {
+            role = member.role;
+            await (0, shared_1.setCachedTeamRole)(teamId, userId, role);
+        }
+    }
+    if (!role)
+        return res.status(403).json({ error: 'Unauthorized' });
+    if (role === 'viewer')
+        return res.status(403).json({ error: 'Unauthorized: Viewers cannot use the AI assistant' });
+    try {
+        const usage = await (0, ai_1.checkAndRecordUsage)(supabase, teamId, 'caption');
+        if (!usage.allowed)
+            return res.status(429).json({ error: 'This team has reached its AI generation limit for this month.' });
+        const platformArg = typeof platform === 'string' ? platform : undefined;
+        const result = typeof imageUrl === 'string' && imageUrl
+            ? await (0, ai_1.generateCaptionFromImage)({ prompt: cleanPrompt, imageUrl, platform: platformArg })
+            : await (0, ai_1.generateCaption)({ prompt: cleanPrompt, platform: platformArg });
+        res.json({ success: true, data: result });
+    }
+    catch (err) {
+        if (err instanceof ai_1.AiNotConfiguredError)
+            return res.status(503).json({ error: err.message });
+        console.error('[AI] Caption generation failed:', err.message);
+        res.status(502).json({ error: 'The AI assistant could not generate a result. Please try again.' });
     }
 });
 const PORT = process.env.PORT || 3002;

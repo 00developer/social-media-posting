@@ -12,6 +12,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+process.on('uncaughtException', (err: any) => {
+  if (err?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT') return;
+  console.error('[PostService] Uncaught Exception:', err.message);
+});
+process.on('unhandledRejection', (err: any) => {
+  if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.cause?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT') return;
+  console.error('[PostService] Unhandled Rejection:', err?.message || err);
+});
+
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 const redis = upstashRedis || getRedisConnection(process.env.REDIS_URL || 'redis://localhost:6379');
 

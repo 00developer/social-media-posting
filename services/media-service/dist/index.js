@@ -17,6 +17,7 @@ const ffprobe_static_1 = __importDefault(require("ffprobe-static"));
 const videoFilter_1 = require("./videoFilter");
 const fs_1 = __importDefault(require("fs"));
 const os_1 = __importDefault(require("os"));
+const shared_1 = require("@socialpush/shared");
 fluent_ffmpeg_1.default.setFfmpegPath(ffmpeg_static_1.default);
 fluent_ffmpeg_1.default.setFfprobePath(ffprobe_static_1.default.path);
 dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../../.env') });
@@ -87,10 +88,14 @@ async function processVideo(inputBuffer, platform, contentType = 'post') {
     });
 }
 app.post('/api/v1/media/upload', upload.single('file'), async (req, res) => {
-    const { userId, platforms, contentType } = req.body;
+    const { platforms, contentType } = req.body;
     const uploadedFile = req.file;
-    if (!uploadedFile || !userId || !platforms)
+    if (!uploadedFile || !platforms)
         return res.status(400).json({ error: 'Missing parameters' });
+    const authed = await (0, shared_1.requireUser)(req, supabase);
+    if ('error' in authed)
+        return res.status(authed.status).json({ error: authed.error });
+    const userId = authed.userId;
     const platformList = platforms.split(',');
     const postId = crypto_1.default.randomUUID();
     const results = {};
@@ -166,6 +171,9 @@ app.post('/api/v1/media/upload', upload.single('file'), async (req, res) => {
 app.post('/api/v1/media/transcode-preview', upload.single('file'), async (req, res) => {
     if (!req.file)
         return res.status(400).json({ error: 'Missing file' });
+    const authed = await (0, shared_1.requireUser)(req, supabase);
+    if ('error' in authed)
+        return res.status(authed.status).json({ error: authed.error });
     const tempInput = path_1.default.join(os_1.default.tmpdir(), `in_${crypto_1.default.randomUUID()}.mp4`);
     const tempOutput = path_1.default.join(os_1.default.tmpdir(), `out_${crypto_1.default.randomUUID()}.mp4`);
     try {
@@ -205,6 +213,54 @@ app.post('/api/v1/media/transcode-preview', upload.single('file'), async (req, r
         console.error(err);
         fs_1.default.promises.unlink(tempInput).catch(() => { });
         res.status(500).json({ error: err.message });
+    }
+});
+// A small, throwaway public image the AI Assistant can look at while generating a caption: for an image, a
+// downsized copy; for a video, a single frame grabbed a second in (the AI can't watch a video, only see a picture).
+// Stored under ai-context/ in the same public bucket the post media uses - these accumulate over time with no
+// cleanup job yet, which is fine at this scale but worth revisiting if storage usage becomes a concern.
+app.post('/api/v1/media/ai-thumbnail', upload.single('file'), async (req, res) => {
+    const uploadedFile = req.file;
+    if (!uploadedFile)
+        return res.status(400).json({ error: 'Missing parameters' });
+    const authed = await (0, shared_1.requireUser)(req, supabase);
+    if ('error' in authed)
+        return res.status(authed.status).json({ error: authed.error });
+    const userId = authed.userId;
+    const fileName = `ai-context/${userId}/${crypto_1.default.randomUUID()}.jpg`;
+    try {
+        const isVideo = uploadedFile.mimetype.startsWith('video/');
+        let jpeg;
+        if (isVideo) {
+            const tempInput = path_1.default.join(os_1.default.tmpdir(), `in_${crypto_1.default.randomUUID()}.mp4`);
+            const tempFrame = path_1.default.join(os_1.default.tmpdir(), `frame_${crypto_1.default.randomUUID()}.jpg`);
+            await fs_1.default.promises.writeFile(tempInput, uploadedFile.buffer);
+            try {
+                await new Promise((resolve, reject) => {
+                    (0, fluent_ffmpeg_1.default)(tempInput)
+                        .screenshots({ timestamps: ['1'], filename: path_1.default.basename(tempFrame), folder: path_1.default.dirname(tempFrame), size: '1024x?' })
+                        .on('end', () => resolve())
+                        .on('error', reject);
+                });
+                jpeg = await fs_1.default.promises.readFile(tempFrame);
+            }
+            finally {
+                fs_1.default.promises.unlink(tempInput).catch(() => { });
+                fs_1.default.promises.unlink(tempFrame).catch(() => { });
+            }
+        }
+        else {
+            jpeg = await (0, sharp_1.default)(uploadedFile.buffer).resize({ width: 1024, withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer();
+        }
+        const { error } = await supabase.storage.from('post_media').upload(fileName, jpeg, { contentType: 'image/jpeg', upsert: true });
+        if (error)
+            throw error;
+        const { data: { publicUrl } } = supabase.storage.from('post_media').getPublicUrl(fileName);
+        res.json({ success: true, url: publicUrl });
+    }
+    catch (error) {
+        console.error('[Media] AI thumbnail failed:', error.message);
+        res.status(500).json({ error: 'Could not prepare the media for the AI assistant.' });
     }
 });
 const PORT = process.env.PORT || 3006;

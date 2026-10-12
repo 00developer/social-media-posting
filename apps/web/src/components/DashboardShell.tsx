@@ -1,156 +1,214 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useDashboard } from './DashboardProvider';
 import { NotificationBell } from './NotificationBell';
 import { supabase } from '@/lib/supabase';
+import {
+  LayoutDashboard,
+  PenSquare,
+  Calendar,
+  BarChart3,
+  MessageSquare,
+  Sparkles,
+  Share2,
+  Settings,
+  LogOut,
+  ChevronDown,
+  Zap,
+  Menu,
+  X,
+  Building2,
+} from 'lucide-react';
 
-function getGreeting(hour: number) {
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
+const NAV_ITEMS = [
+  { href: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard },
+  { href: '/dashboard/posts', label: 'Posts & Compose', icon: PenSquare },
+  { href: '/dashboard/calendar', label: 'Calendar', icon: Calendar },
+  { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/dashboard/comments', label: 'Comments', icon: MessageSquare },
+  { href: '/dashboard/ai-assistant', label: 'AI Assistant', icon: Sparkles, badge: 'AI' },
+  { href: '/dashboard/accounts', label: 'Accounts', icon: Share2 },
+  { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+];
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const { user, loading, teams, activeTeam, setActiveTeam, notifications, markNotificationsRead } = useDashboard();
   const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
 
   const displayName = user?.email?.split('@')[0] || 'there';
-  const greeting = getGreeting(new Date().getHours());
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">Loading your workspace...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#090d16] text-slate-400">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs font-medium tracking-wide text-slate-400">Loading workspace...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col md:flex-row text-gray-800 font-sans">
-      
+    <div className="min-h-screen bg-[#090d16] flex flex-col md:flex-row text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
+      {/* Mobile Top Header */}
+      <div className="md:hidden flex items-center justify-between px-5 py-3.5 bg-[#0e1322] border-b border-slate-800 sticky top-0 z-30">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-xs">
+            <Zap className="w-3.5 h-3.5 fill-white" />
+          </div>
+          <span className="font-bold text-base text-white tracking-tight">SocialPush</span>
+        </div>
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          aria-label="Toggle Navigation"
+        >
+          {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+      </div>
+
       {/* Sidebar */}
-      <aside className="w-full md:w-72 bg-white border-r border-gray-100 flex flex-col min-h-screen z-10">
-        <div className="h-16 flex items-center px-6 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-200">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+      <aside
+        className={`${
+          mobileMenuOpen ? 'fixed inset-0 z-40 bg-[#0e1322] flex' : 'hidden'
+        } md:flex w-full md:w-64 bg-[#0d121f] border-r border-slate-800/80 flex-col min-h-screen md:sticky md:top-0 md:h-screen z-20`}
+      >
+        {/* Brand */}
+        <div className="h-16 hidden md:flex items-center px-5 border-b border-slate-800/80">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-xs">
+              <Zap className="w-3.5 h-3.5 fill-white" />
             </div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-linear-to-r from-gray-900 to-gray-600 tracking-tight">SocialPush</h1>
+            <div>
+              <span className="font-bold text-sm text-white tracking-tight leading-none block">SocialPush</span>
+              <span className="text-[10px] text-slate-500 block leading-tight mt-0.5">Social Studio</span>
+            </div>
           </div>
         </div>
-        
-        <nav className="flex-1 py-6 px-4 space-y-1">
-          <div className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Menu</div>
-          <Link
-            href="/dashboard/overview"
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${pathname.includes('/overview') ? 'bg-indigo-50/80 text-indigo-700 shadow-sm font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-            Overview
-          </Link>
-          <Link
-            href="/dashboard/posts"
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${pathname.includes('/posts') ? 'bg-indigo-50/80 text-indigo-700 shadow-sm font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" /></svg>
-            Posts
-          </Link>
-          <Link 
-            href="/dashboard/calendar" 
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${pathname.includes('/calendar') ? 'bg-indigo-50/80 text-indigo-700 shadow-sm font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            Calendar
-          </Link>
-          <Link 
-            href="/dashboard/analytics" 
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${pathname.includes('/analytics') ? 'bg-indigo-50/80 text-indigo-700 shadow-sm font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-            Analytics
-          </Link>
-          <Link 
-            href="/dashboard/comments" 
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${pathname.includes('/comments') ? 'bg-indigo-50/80 text-indigo-700 shadow-sm font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-            Comments
-          </Link>
-          <Link
-            href="/dashboard/ai-assistant"
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${pathname.includes('/ai-assistant') ? 'bg-indigo-50/80 text-indigo-700 shadow-sm font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
-            AI Assistant
-          </Link>
-          <Link
-            href="/dashboard/accounts"
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${pathname.includes('/accounts') ? 'bg-indigo-50/80 text-indigo-700 shadow-sm font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-            Accounts
-          </Link>
-          <Link 
-            href="/dashboard/settings" 
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${pathname.includes('/settings') ? 'bg-indigo-50/80 text-indigo-700 shadow-sm font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-            Settings
-          </Link>
+
+        {/* Navigation */}
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto custom-scrollbar">
+          <div className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+            Workspace
+          </div>
+
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const isActive = pathname.startsWith(item.href);
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className={`group relative flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'bg-slate-800 text-white font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Icon
+                    className={`w-4 h-4 transition-colors ${
+                      isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300'
+                    }`}
+                  />
+                  <span>{item.label}</span>
+                </div>
+
+                {item.badge && (
+                  <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-indigo-500/15 text-indigo-400 border border-indigo-500/20">
+                    {item.badge}
+                  </span>
+                )}
+
+                {isActive && (
+                  <span className="absolute left-0 top-1.5 bottom-1.5 w-0.75 bg-indigo-500 rounded-r-full" />
+                )}
+              </Link>
+            );
+          })}
         </nav>
+
+        {/* Sidebar Footer User / Logout */}
+        <div className="p-3.5 border-t border-slate-800/80 bg-[#090d16]/80">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 text-[11px] font-bold uppercase shrink-0">
+                {displayName.slice(0, 2)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-slate-200 truncate">{displayName}</p>
+                <p className="text-[10px] text-slate-500 truncate">{user?.email}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
+              title="Sign Out"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
       </aside>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        
         {/* Topbar */}
-        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-gray-100 px-8 flex justify-between items-center sticky top-0 z-10">
-          <div className="flex items-center gap-4">
+        <header className="h-14 bg-[#0d121f] border-b border-slate-800/80 px-6 sm:px-8 flex justify-between items-center sticky top-0 z-20">
+          <div className="flex items-center gap-2.5">
             {teams.length > 0 && (
-              <div className="relative">
-                <select 
-                  className="appearance-none pl-3 pr-8 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer"
+              <div className="relative flex items-center">
+                <div className="absolute left-2.5 pointer-events-none text-slate-400">
+                  <Building2 className="w-3.5 h-3.5" />
+                </div>
+                <select
+                  className="appearance-none pl-8 pr-7 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-medium text-slate-200 hover:border-slate-700 focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
                   value={activeTeam?.id || ''}
-                  onChange={(e) => setActiveTeam(teams.find(t => t.id === e.target.value) || null)}
+                  onChange={(e) => setActiveTeam(teams.find((t) => t.id === e.target.value) || null)}
                 >
-                  {teams.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.role})</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id} className="bg-slate-900 text-slate-200">
+                      {t.name} ({t.role})
+                    </option>
                   ))}
                 </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                </div>
+                <ChevronDown className="w-3 h-3 text-slate-400 absolute right-2 pointer-events-none" />
               </div>
             )}
             {activeTeam && (
-              <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-600 border border-indigo-100">
+              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
                 {activeTeam.plan}
               </span>
             )}
           </div>
-          
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-3">
             <NotificationBell notifications={notifications} onMarkRead={markNotificationsRead} />
-            <button 
-              onClick={handleLogout} 
-              className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100"
+            <button
+              onClick={handleLogout}
+              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors px-2.5 py-1.5 rounded-lg"
             >
-              Log Out
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Log Out</span>
             </button>
           </div>
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-8 overflow-y-auto">
+        <main className="flex-1 p-5 sm:p-7 overflow-y-auto">
           <div className="max-w-6xl mx-auto">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">
-              {greeting}, <span className="capitalize">{displayName}</span> 👋
-            </h2>
             {children}
           </div>
         </main>

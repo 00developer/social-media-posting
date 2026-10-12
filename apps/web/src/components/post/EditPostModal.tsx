@@ -115,50 +115,52 @@ export function EditPostModal({ post, userId, teamId, isViewer, onClose, onSaved
   return (
     <PostModalShell onClose={onClose} isBusy={saving || retrying} ariaLabel="Edit post">
       <div>
-        <h2 className="text-lg font-bold text-gray-900 mb-5 flex items-center gap-2 pr-10">
-          <svg className="w-5 h-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+        <h2 className="text-xl font-extrabold text-white mb-5 flex items-center gap-2.5 pr-10">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-xs">
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+          </span>
           {editability.editable ? 'Edit Post' : 'Post Details'}
         </h2>
 
         {!editability.editable && (
-          <div role="status" className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <div role="status" className="mb-5 rounded-xl border border-amber-500/30 bg-amber-950/40 px-3.5 py-2.5 text-sm text-amber-300 backdrop-blur-md">
             {editability.reason}
           </div>
         )}
 
-        <label htmlFor="edit-post-caption" className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Caption</label>
+        <label htmlFor="edit-post-caption" className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Caption</label>
         <textarea
           id="edit-post-caption"
-          className="w-full border border-gray-200 rounded-xl p-4 text-gray-800 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none resize-none placeholder-gray-400 disabled:opacity-70"
+          className="w-full border border-slate-700 rounded-xl p-4 text-sm text-white bg-slate-900/90 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none resize-none placeholder-slate-500 disabled:opacity-60 leading-relaxed"
           rows={5}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           disabled={!editability.editable || saving}
         />
-        <div className="mt-1 mb-5 flex justify-between gap-3 text-xs">
-          <span className={problem ? 'text-red-600' : 'text-gray-400'} role={problem ? 'alert' : undefined}>{problem ?? ''}</span>
-          <span className={targetsThreads && utf8Bytes > THREADS_MAX_BYTES ? 'text-red-600' : 'text-gray-400'}>
+        <div className="mt-1.5 mb-5 flex justify-between gap-3 text-xs">
+          <span className={problem ? 'text-rose-400 font-medium' : 'text-slate-500'} role={problem ? 'alert' : undefined}>{problem ?? ''}</span>
+          <span className={targetsThreads && utf8Bytes > THREADS_MAX_BYTES ? 'text-rose-400 font-semibold' : 'text-slate-400'}>
             {draft.length} characters{targetsThreads ? ` · ${utf8Bytes}/${THREADS_MAX_BYTES} bytes (Threads)` : ''}
           </span>
         </div>
 
         <div className="mb-5">
-          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Platforms</label>
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Platforms</label>
           {statuses.length === 0 ? (
-            <p className="text-sm text-gray-500">No platforms are attached to this post yet.</p>
+            <p className="text-sm text-slate-400">No platforms are attached to this post yet.</p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-2.5">
               {statuses.map((s) => (
-                <li key={s.platform} className="flex items-start justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+                <li key={s.platform} className="flex items-start justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/80 px-3.5 py-2.5 backdrop-blur-sm">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-gray-800 capitalize">{s.platform}</span>
-                      <span className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white" style={{ backgroundColor: s.color }}>{s.label}</span>
+                      <span className="text-sm font-bold text-white capitalize">{s.platform}</span>
+                      <span className="inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm" style={{ backgroundColor: s.color }}>{s.label}</span>
                     </div>
-                    {s.error && <p className="mt-1 text-xs text-red-600 wrap-break-word">{s.error}</p>}
-                    {s.note && <p className="mt-1 text-xs text-amber-700 wrap-break-word">{s.note}</p>}
+                    {s.error && <p className="mt-1 text-xs text-rose-400 wrap-break-word">{s.error}</p>}
+                    {s.note && <p className="mt-1 text-xs text-amber-300 wrap-break-word">{s.note}</p>}
                   </div>
-                  <span className="shrink-0 text-xs text-gray-500">{s.scheduledAt ? formatTime(s.scheduledAt) : '—'}</span>
+                  <span className="shrink-0 text-xs text-slate-400 font-medium">{s.scheduledAt ? formatTime(s.scheduledAt) : '—'}</span>
                 </li>
               ))}
             </ul>
@@ -168,35 +170,35 @@ export function EditPostModal({ post, userId, teamId, isViewer, onClose, onSaved
               type="button"
               onClick={handleRetry}
               disabled={retrying || saving}
-              className="mt-3 w-full rounded-xl border-2 border-red-100 bg-red-50 py-2 text-sm font-bold text-red-700 transition-all hover:bg-red-100 disabled:pointer-events-none disabled:opacity-50"
+              className="mt-3 w-full rounded-xl border border-rose-500/40 bg-rose-950/40 py-2.5 text-xs font-bold uppercase tracking-wider text-rose-300 transition-all hover:bg-rose-900/50 disabled:pointer-events-none disabled:opacity-50"
             >
               {retrying ? 'Retrying...' : `Retry failed platforms (${failedPlatforms.length})`}
             </button>
           )}
-          {retriedNotice && <p role="status" className="mt-2 text-xs text-green-700">{retriedNotice}</p>}
-          <p className="mt-2 text-xs text-gray-400">Times shown in {timeZone}</p>
+          {retriedNotice && <p role="status" className="mt-2 text-xs text-emerald-400 font-medium">{retriedNotice}</p>}
+          <p className="mt-2 text-xs text-slate-500">Times shown in {timeZone}</p>
         </div>
 
         {previewPlatforms.length > 0 && (
           <div className="mb-5">
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Preview</label>
-            <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Preview</label>
+            <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950/80">
               {previewPlatforms.length > 1 && (
-                <div className="flex items-center gap-1 p-2 border-b border-gray-200 bg-white overflow-x-auto shrink-0">
-                  <span className="text-xs font-bold text-gray-500 mr-2">Preview for:</span>
+                <div className="flex items-center gap-1.5 p-2.5 border-b border-slate-800 bg-slate-900/80 overflow-x-auto shrink-0">
+                  <span className="text-xs font-bold text-slate-400 mr-2">Preview for:</span>
                   {previewPlatforms.map((p) => (
                     <button
                       key={p}
                       type="button"
                       onClick={() => setPreviewPlatform(p)}
-                      className={`text-[10px] px-3 py-1.5 rounded-md font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${activePreview === p ? 'bg-indigo-100 text-indigo-700 shadow-sm' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
+                      className={`text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-wider transition-all whitespace-nowrap ${activePreview === p ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}
                     >
                       {p}
                     </button>
                   ))}
                 </div>
               )}
-              <div className="bg-gray-100 p-4 flex items-center justify-center">
+              <div className="bg-[#090D16] p-5 flex items-center justify-center">
                 <PlatformPreviewCard
                   platform={activePreview}
                   content={draft}
@@ -209,22 +211,22 @@ export function EditPostModal({ post, userId, teamId, isViewer, onClose, onSaved
           </div>
         )}
 
-        <p className="mb-5 text-xs text-gray-500">Only the caption can be edited here. Time, platforms and media stay as scheduled.</p>
+        <p className="mb-5 text-xs text-slate-400">Only the caption can be edited here. Time, platforms and media stay as scheduled.</p>
 
         {error && (
-          <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div role="alert" className="mb-4 rounded-xl border border-rose-500/30 bg-rose-950/40 px-3.5 py-2.5 text-sm text-rose-300">
             {error}
           </div>
         )}
 
-        <div className="flex gap-2">
+        <div className="flex gap-2.5">
           {editability.editable ? (
             <>
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={!canSave}
-                className="flex-1 bg-linear-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all disabled:opacity-50 disabled:pointer-events-none"
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 disabled:pointer-events-none"
               >
                 {saving ? 'Saving...' : 'Save changes'}
               </button>
@@ -232,7 +234,7 @@ export function EditPostModal({ post, userId, teamId, isViewer, onClose, onSaved
                 type="button"
                 onClick={onClose}
                 disabled={saving}
-                className="flex-1 bg-white border-2 border-indigo-100 text-indigo-600 py-3 rounded-xl font-bold hover:bg-indigo-50 hover:border-indigo-200 transition-all disabled:opacity-50 disabled:pointer-events-none"
+                className="flex-1 border border-slate-700 bg-slate-900 text-slate-300 py-3 rounded-xl text-sm font-bold hover:bg-slate-800 hover:text-white transition-all disabled:opacity-50 disabled:pointer-events-none"
               >
                 Cancel
               </button>
@@ -241,7 +243,7 @@ export function EditPostModal({ post, userId, teamId, isViewer, onClose, onSaved
             <button
               type="button"
               onClick={onClose}
-              className="w-full bg-white border-2 border-indigo-100 text-indigo-600 py-3 rounded-xl font-bold hover:bg-indigo-50 hover:border-indigo-200 transition-all"
+              className="w-full border border-slate-700 bg-slate-900 text-slate-200 py-3 rounded-xl text-sm font-bold hover:bg-slate-800 hover:text-white transition-all"
             >
               Close
             </button>

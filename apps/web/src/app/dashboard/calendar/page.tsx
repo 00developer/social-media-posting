@@ -41,11 +41,11 @@ function renderEventContent(arg: EventContentArg) {
 function StatusLegend() {
   const order: CalendarStatusKey[] = ['scheduled', 'processing', 'published', 'partial', 'failed'];
   return (
-    <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
+    <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-300 font-medium">
       {order.map((key) => (
         <li key={key} className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STATUS_META[key].color }} />
-          {STATUS_META[key].label}
+          <span className="inline-block h-2.5 w-2.5 rounded-full ring-2 ring-slate-800 shadow-sm" style={{ backgroundColor: STATUS_META[key].color }} />
+          <span>{STATUS_META[key].label}</span>
         </li>
       ))}
     </ul>
@@ -134,17 +134,17 @@ function TeamCalendar({ userId, teamId, canCreate, refreshTimeline }: { userId: 
   );
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] min-h-150 flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="flex h-[calc(100vh-8rem)] min-h-150 flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-[#0D131F] px-4 py-3">
         <StatusLegend />
-        <div className="flex items-center gap-3 text-xs text-gray-500">
-          {isLoading && <span>Loading…</span>}
-          <span>Times shown in {timeZone}</span>
+        <div className="flex items-center gap-3 text-xs text-slate-400">
+          {isLoading && <span className="inline-flex items-center gap-1.5 text-indigo-400 font-medium"><span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-ping" />Loading…</span>}
+          <span>Times shown in <strong className="text-slate-200">{timeZone}</strong></span>
         </div>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="rounded-xl border border-rose-500/30 bg-rose-950/40 px-4 py-3 text-sm text-rose-300">
           Could not load posts: {error}
         </div>
       )}
@@ -152,15 +152,15 @@ function TeamCalendar({ userId, teamId, canCreate, refreshTimeline }: { userId: 
       {notice && (
         <div
           role="status"
-          className={`rounded-lg border px-3 py-2 text-sm ${
-            notice.kind === 'warn' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-indigo-200 bg-indigo-50 text-indigo-800'
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            notice.kind === 'warn' ? 'border-amber-500/30 bg-amber-950/40 text-amber-300' : 'border-indigo-500/30 bg-indigo-950/40 text-indigo-300'
           }`}
         >
           {notice.text}
         </div>
       )}
 
-      <div className={`calendar-events-clickable min-h-0 flex-1 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${canCreate ? 'calendar-creatable' : ''}`}>
+      <div className={`calendar-events-clickable min-h-0 flex-1 rounded-2xl border border-slate-800 bg-[#0D131F] p-5 shadow-sm ${canCreate ? 'calendar-creatable' : ''}`}>
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -190,7 +190,7 @@ function TeamCalendar({ userId, teamId, canCreate, refreshTimeline }: { userId: 
       </div>
 
       {!isLoading && !error && eventCount === 0 && (
-        <p className="text-center text-sm text-gray-400">No scheduled or published posts in this range.</p>
+        <p className="text-center text-sm text-slate-500">No scheduled or published posts in this range.</p>
       )}
 
       {modal && (
@@ -217,7 +217,7 @@ export default function CalendarPage() {
   const { user, activeTeam, fetchTeamData } = useDashboard();
 
   if (!user || !activeTeam) {
-    return <div className="p-6 text-sm text-gray-500">Loading your calendar…</div>;
+    return <div className="p-6 text-sm text-slate-400">Loading your calendar…</div>;
   }
 
   return (

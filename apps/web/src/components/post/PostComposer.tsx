@@ -6,6 +6,20 @@ import { PlatformPreviewCard } from '@/components/post/PlatformPreviewCard';
 import { MEDIA_SERVICE_URL, POST_SERVICE_URL, SCHEDULING_SERVICE_URL } from '@/lib/apiUrls';
 import { takeAiDraftHandoff } from '@/lib/aiDraftHandoff';
 import { authHeader } from '@/lib/supabase';
+import {
+  Sparkles,
+  PenSquare,
+  UploadCloud,
+  Calendar,
+  Send,
+  Bookmark,
+  Video,
+  FileText,
+  Trash2,
+  Check,
+  RotateCw,
+  Film
+} from 'lucide-react';
 
 type PostComposerProps = {
   /** Lets the host page mirror the "uploading" placeholder card in its own timeline. */
@@ -23,7 +37,7 @@ export type PostActionType = 'draft' | 'schedule' | 'publish';
 export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialScheduleAt = '', onSubmitted }: PostComposerProps) {
   const { user, activeTeam, fetchTeamData } = useDashboard();
 
-  const [newPostContent, setNewPostContent] = useState('');
+  const [newPostContent, setNewPostContent] = useState(() => (typeof window !== 'undefined' ? takeAiDraftHandoff() || '' : ''));
   const [scheduleAt, setScheduleAt] = useState(initialScheduleAt);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
@@ -35,8 +49,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<{ caption: string; paragraph: string; hashtags: string[] } | null>(null);
-  const [aiDraft, setAiDraft] = useState(''); // editable, pre-filled from aiResult; "Use in Post" copies this
-  const [aiImageUrl, setAiImageUrl] = useState<string | null>(null); // uploaded lazily, on first Generate click
+  const [aiDraft, setAiDraft] = useState('');
+  const [aiImageUrl, setAiImageUrl] = useState<string | null>(null);
   const [aiImageUploading, setAiImageUploading] = useState(false);
   const [optimisticPost, setOptimisticPostState] = useState<Partial<Post> | null>(null);
   const setOptimisticPost = (post: Partial<Post> | null) => {
@@ -48,13 +62,6 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
   const activePreviewPlatform = previewPlatform && selectedPlatforms.includes(previewPlatform) 
     ? previewPlatform 
     : (selectedPlatforms.length > 0 ? selectedPlatforms[0] : null);
-
-  // Pre-fills the box when arriving from the standalone AI Assistant page's "Use in new post" (only ever runs once,
-  // right after mount, and only if the composer is still empty - never overwrites something the user is mid-typing).
-  useEffect(() => {
-    const handoff = takeAiDraftHandoff();
-    if (handoff) setNewPostContent((current) => current || handoff);
-  }, []);
 
   const handleMediaChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
@@ -133,7 +140,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
     }
   };
 
-  const useAiVersion = (kind: 'caption' | 'paragraph') => {
+  const applyAiVersion = (kind: 'caption' | 'paragraph') => {
     if (!aiResult) return;
     setAiDraft(`${aiResult[kind]}\n\n${aiResult.hashtags.join(' ')}`);
   };
@@ -238,185 +245,318 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
     }
   };
 
+  const PLATFORMS_DATA = [
+    { id: 'youtube', label: 'YouTube', activeClass: 'bg-red-600 text-white border-red-600 shadow-xs' },
+    { id: 'instagram', label: 'Instagram', activeClass: 'bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white border-transparent shadow-xs' },
+    { id: 'facebook', label: 'Facebook', activeClass: 'bg-blue-600 text-white border-blue-600 shadow-xs' },
+    { id: 'threads', label: 'Threads', activeClass: 'bg-slate-900 text-white border-slate-900 shadow-xs' },
+    { id: 'twitter', label: 'Twitter', activeClass: 'bg-sky-500 text-white border-sky-500 shadow-xs' },
+    { id: 'linkedin', label: 'LinkedIn', activeClass: 'bg-blue-700 text-white border-blue-700 shadow-xs' },
+    { id: 'tiktok', label: 'TikTok', activeClass: 'bg-slate-950 text-white border-slate-950 shadow-xs' },
+    { id: 'pinterest', label: 'Pinterest', activeClass: 'bg-red-700 text-white border-red-700 shadow-xs' },
+  ];
+
   return (
-    <div className={variant === 'modal' ? 'bg-white' : 'bg-white p-6 rounded-2xl shadow-sm border border-gray-100 sticky top-24'}>
-      <h2 className="text-lg font-bold text-gray-900 mb-5 flex items-center gap-2">
-        <svg className="w-5 h-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-        Compose Post
-      </h2>
+    <div className={variant === 'modal' ? 'bg-[#0d131f] text-slate-100' : 'bg-[#0d131f] p-5 rounded-2xl border border-slate-800 sticky top-20 text-slate-100 shadow-xs'}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
+            <PenSquare className="w-3.5 h-3.5" />
+          </div>
+          <span>Compose Post</span>
+        </h2>
+        {newPostContent.length > 0 && (
+          <span className="text-[11px] font-medium text-slate-400 bg-slate-900 px-2 py-0.5 rounded-md border border-slate-800">
+            {newPostContent.length} chars
+          </span>
+        )}
+      </div>
       
+      {/* AI Assistant Section */}
       {activeTeam?.role !== 'viewer' && (
-        <div className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
-          <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-indigo-600">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
-            AI Assistant
-          </label>
+        <div className="mb-4 rounded-xl border border-slate-800 bg-slate-900/50 p-3.5">
+          <div className="flex items-center justify-between mb-2">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <span>AI Caption Assistant</span>
+            </label>
+          </div>
+
           <div className="space-y-2">
             <input
               type="text"
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !aiLoading) { e.preventDefault(); generateWithAi(); } }}
-              placeholder="e.g. weekend sale on handmade candles"
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none"
+              placeholder="e.g. weekend sale on handmade craft items..."
+              className="w-full rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-xs text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-all placeholder:text-slate-500 shadow-inner"
             />
-            <button type="button" onClick={generateWithAi} disabled={aiLoading || !aiPrompt.trim()}
-              className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
-              {aiImageUploading ? 'Preparing photo...' : aiLoading ? 'Generating...' : 'Generate'}
+            <button
+              type="button"
+              onClick={generateWithAi}
+              disabled={aiLoading || !aiPrompt.trim()}
+              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5"
+            >
+              {aiImageUploading ? (
+                <>
+                  <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Preparing photo context...</span>
+                </>
+              ) : aiLoading ? (
+                <>
+                  <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Crafting ideas...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Generate with AI</span>
+                </>
+              )}
             </button>
           </div>
-          {mediaFile && <p className="mt-1.5 text-xs text-indigo-500">Will look at your attached {mediaFile.type.startsWith('video/') ? 'video (first frame)' : 'photo'} for context.</p>}
-          {aiError && <p className="mt-2 text-sm text-red-600">{aiError}</p>}
+          {mediaFile && (
+            <p className="mt-2 text-[11px] text-indigo-400 font-medium">
+              💡 Attached {mediaFile.type.startsWith('video/') ? 'video frame' : 'photo'} will be analyzed for visual context.
+            </p>
+          )}
+          {aiError && <p className="mt-2 text-xs text-rose-400 font-medium">{aiError}</p>}
           {aiResult && (
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2 pt-2 border-t border-indigo-900/60">
               <div className="flex gap-1.5">
-                <button type="button" onClick={() => useAiVersion('caption')} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50">Short caption</button>
-                <button type="button" onClick={() => useAiVersion('paragraph')} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50">Longer paragraph</button>
+                <button
+                  type="button"
+                  onClick={() => applyAiVersion('caption')}
+                  className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300 border border-slate-800 hover:bg-slate-800 hover:text-white transition-all"
+                >
+                  Short caption
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyAiVersion('paragraph')}
+                  className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300 border border-slate-800 hover:bg-slate-800 hover:text-white transition-all"
+                >
+                  Long paragraph
+                </button>
               </div>
               <textarea
                 value={aiDraft}
                 onChange={(e) => setAiDraft(e.target.value)}
-                rows={4}
-                className="w-full rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none"
+                rows={3}
+                className="w-full rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none shadow-inner resize-none"
               />
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-gray-500">Review and edit above, then add it to your post below.</p>
-                <button type="button" onClick={insertAiDraft} className="shrink-0 rounded-lg bg-gray-900 px-4 py-1.5 text-sm font-semibold text-white hover:bg-gray-800">Use in Post</button>
+                <p className="text-[10px] text-slate-400">Review above before inserting.</p>
+                <button
+                  type="button"
+                  onClick={insertAiDraft}
+                  className="shrink-0 rounded-xl bg-white px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-slate-200 shadow-md transition-all"
+                >
+                  Use in Post
+                </button>
               </div>
             </div>
           )}
         </div>
       )}
 
-      <textarea
-        className="w-full border border-gray-200 rounded-xl p-4 mb-5 text-gray-800 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none resize-none placeholder-gray-400"
-        rows={5}
-        placeholder="What's on your mind?"
-        value={newPostContent}
-        onChange={(e) => setNewPostContent(e.target.value)}
-        disabled={activeTeam?.role === 'viewer'}
-      />
+      {/* Main Post Text Area */}
+      <div className="relative mb-5">
+        <textarea
+          className="w-full border border-slate-800 rounded-2xl p-4 text-sm text-slate-100 bg-slate-900/90 hover:bg-slate-900 focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none resize-none placeholder-slate-500 shadow-inner leading-relaxed"
+          rows={5}
+          placeholder="What's happening? Share updates, announcements, or attach media..."
+          value={newPostContent}
+          onChange={(e) => setNewPostContent(e.target.value)}
+          disabled={activeTeam?.role === 'viewer'}
+        />
 
+        {/* Quick Tag Suggestions & Character Count */}
+        <div className="flex items-center justify-between mt-2 gap-2">
+          <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-0.5">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0">Tags:</span>
+            {['#trending', '#update', '#announcement', '#viral', '#creative'].map(tag => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => setNewPostContent(prev => prev ? `${prev} ${tag}` : tag)}
+                disabled={activeTeam?.role === 'viewer'}
+                className="px-2 py-0.5 rounded-lg bg-slate-800/80 hover:bg-indigo-950 hover:text-indigo-300 text-slate-300 text-[11px] font-medium transition-colors shrink-0 border border-transparent hover:border-indigo-800/60"
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+          <span className={`text-[11px] font-semibold shrink-0 ${newPostContent.length > 280 ? 'text-amber-400' : 'text-slate-400'}`}>
+            {newPostContent.length}/2200
+          </span>
+        </div>
+      </div>
+
+      {/* Content Type Selector (Segmented Pills) */}
       <div className="mb-5">
-        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Content Type</label>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input 
-              type="radio" 
-              name="contentType" 
-              value="post" 
-              checked={contentType === 'post'} 
-              onChange={() => setContentType('post')} 
-              disabled={activeTeam?.role === 'viewer'}
-              className="w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
-            />
-            <span className="text-sm font-medium text-gray-700">Standard Post</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input 
-              type="radio" 
-              name="contentType" 
-              value="reel" 
-              checked={contentType === 'reel'} 
-              onChange={() => setContentType('reel')} 
-              disabled={activeTeam?.role === 'viewer'}
-              className="w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
-            />
-            <span className="text-sm font-medium text-gray-700">Reel / Short</span>
-          </label>
+        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Content Type</label>
+        <div className="flex bg-slate-900/80 p-1 rounded-xl gap-1 border border-slate-800">
+          <button
+            type="button"
+            onClick={() => setContentType('post')}
+            disabled={activeTeam?.role === 'viewer'}
+            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
+              contentType === 'post'
+                ? 'bg-slate-800 text-white font-semibold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Standard Post</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setContentType('reel')}
+            disabled={activeTeam?.role === 'viewer'}
+            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
+              contentType === 'reel'
+                ? 'bg-slate-800 text-white font-semibold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Film className="w-3.5 h-3.5" />
+            <span>Reel / Short</span>
+          </button>
         </div>
       </div>
       
+      {/* Target Platforms */}
       <div className="mb-5">
-        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Select Platforms</label>
-        <div className="flex flex-wrap gap-2">
-          {['twitter', 'facebook', 'instagram', 'youtube', 'linkedin', 'tiktok', 'pinterest', 'threads'].map(p => {
-            const isSelected = selectedPlatforms.includes(p);
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Target Channels</label>
+          <span className="text-[10px] text-slate-400 font-semibold">{selectedPlatforms.length} selected</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {PLATFORMS_DATA.map(p => {
+            const isSelected = selectedPlatforms.includes(p.id);
             return (
               <button
-                key={p}
+                key={p.id}
+                type="button"
                 onClick={() => {
-                  if (isSelected) setSelectedPlatforms(selectedPlatforms.filter(sp => sp !== p));
-                  else setSelectedPlatforms([...selectedPlatforms, p]);
+                  if (isSelected) setSelectedPlatforms(selectedPlatforms.filter(sp => sp !== p.id));
+                  else setSelectedPlatforms([...selectedPlatforms, p.id]);
                 }}
                 disabled={activeTeam?.role === 'viewer'}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${isSelected ? 'bg-indigo-500 text-white shadow-md shadow-indigo-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+                  isSelected
+                    ? p.activeClass
+                    : 'bg-slate-900/80 text-slate-300 border-slate-800 hover:bg-slate-800 hover:border-slate-700 shadow-2xs'
+                }`}
               >
-                <span className="capitalize">{p}</span>
+                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                <span>{p.label}</span>
               </button>
-            )
+            );
           })}
         </div>
       </div>
 
+      {/* Media Attachment */}
       <div className="mb-5 space-y-4">
         <div>
           <div className="flex justify-between items-center mb-2">
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Media</label>
+            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Attachment</label>
             {mediaFile && (
               <button
                 type="button"
                 onClick={() => { setMediaFile(null); setMediaPreview(null); setFileInputKey(prev => prev + 1); }}
-                className="text-[10px] text-red-500 font-bold hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded transition-colors uppercase tracking-wider"
+                className="text-[10px] text-rose-400 font-bold hover:text-rose-300 hover:bg-rose-950/40 px-2 py-0.5 rounded-md transition-colors uppercase tracking-wider flex items-center gap-1"
               >
-                Remove File
+                <Trash2 className="w-3 h-3" />
+                Remove
               </button>
             )}
           </div>
-          <input 
-            key={fileInputKey}
-            type="file" 
-            accept="image/*,video/*"
-            disabled={activeTeam?.role === 'viewer' || isPreviewLoading} 
-            onChange={handleMediaChange} 
-            className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-all cursor-pointer mb-3" 
-          />
-          {isPreviewLoading && (
-            <div className="flex items-center gap-3 text-sm text-indigo-600 font-semibold mb-3">
-              <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-              Generating universal web preview...
+
+          {!mediaFile ? (
+            <label className="border-2 border-dashed border-slate-800 hover:border-indigo-500/60 rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-indigo-950/20 transition-all group bg-slate-900/40">
+              <div className="w-9 h-9 rounded-xl bg-slate-800 group-hover:bg-indigo-950 text-slate-400 group-hover:text-indigo-400 flex items-center justify-center mb-1.5 transition-colors border border-slate-700/60">
+                <UploadCloud className="w-5 h-5" />
+              </div>
+              <span className="text-xs font-semibold text-slate-200">Upload video or photo</span>
+              <span className="text-[10px] text-slate-400 mt-0.5">MP4, WEBM, PNG, JPEG up to 100MB</span>
+              <input 
+                key={fileInputKey}
+                type="file" 
+                accept="image/*,video/*"
+                disabled={activeTeam?.role === 'viewer' || isPreviewLoading} 
+                onChange={handleMediaChange} 
+                className="hidden" 
+              />
+            </label>
+          ) : (
+            <div className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-indigo-950 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-800/60">
+                  {mediaFile.type.startsWith('video/') ? <Video className="w-4 h-4" /> : <UploadCloud className="w-4 h-4" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-200 truncate">{mediaFile.name}</p>
+                  <p className="text-[10px] text-slate-400">{(mediaFile.size / (1024 * 1024)).toFixed(2)} MB</p>
+                </div>
+              </div>
             </div>
           )}
+
+          {isPreviewLoading && (
+            <div className="flex items-center gap-2 text-xs text-indigo-400 font-semibold mt-2">
+              <RotateCw className="w-3.5 h-3.5 animate-spin" />
+              Generating preview transcode...
+            </div>
+          )}
+
           {(mediaPreview || newPostContent) && (
-            <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50 mt-3 flex flex-col shadow-inner">
+            <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-900 mt-3 flex flex-col shadow-2xl">
               {selectedPlatforms.length > 0 ? (
                 <>
-                  <div className="flex items-center gap-1 p-2 border-b border-gray-200 bg-white overflow-x-auto shrink-0">
-                    <span className="text-xs font-bold text-gray-500 mr-2">Preview for:</span>
+                  <div className="flex items-center gap-1.5 p-2.5 border-b border-slate-800 bg-[#0e1322] overflow-x-auto shrink-0 custom-scrollbar">
+                    <span className="text-[11px] font-bold text-slate-400 mr-1">Preview:</span>
                     {selectedPlatforms.map(p => (
                       <button
                         key={p}
                         onClick={() => setPreviewPlatform(p)}
-                        className={`text-[10px] px-3 py-1.5 rounded-md font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${activePreviewPlatform === p ? 'bg-indigo-100 text-indigo-700 shadow-sm' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
+                        className={`text-[10px] px-2.5 py-1 rounded-lg font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
+                          activePreviewPlatform === p
+                            ? 'bg-indigo-950 text-indigo-300 border border-indigo-800/80 shadow-[0_0_8px_rgba(99,102,241,0.25)]'
+                            : 'bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                        }`}
                       >
                         {p}
                       </button>
                     ))}
                   </div>
                   
-                  {/* In the modal the modal itself scrolls; a second inner scroll area made the preview cramped. */}
-                  <div className={variant === 'modal' ? 'bg-gray-100 p-4 flex items-center justify-center' : 'flex-1 overflow-y-auto max-h-112.5 bg-gray-100 p-4 flex items-center justify-center'}>
+                  <div className={variant === 'modal' ? 'bg-[#090d16] p-4 flex items-center justify-center' : 'flex-1 overflow-y-auto max-h-112.5 bg-[#090d16] p-4 flex items-center justify-center custom-scrollbar'}>
                     <PlatformPreviewCard platform={activePreviewPlatform} content={newPostContent} mediaUrl={mediaPreview} isVideo={mediaFile?.type.startsWith('video/')} contentType={contentType} />
                   </div>
                 </>
               ) : (
-                <div className="p-8 text-center bg-white">
-                  <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                     <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                  </div>
-                  <p className="text-sm text-gray-500 font-medium mb-1">Preview Unavailable</p>
-                  <p className="text-xs text-gray-400">Select a platform above to preview your post</p>
+                <div className="p-6 text-center bg-slate-900/60">
+                  <p className="text-xs text-slate-300 font-semibold mb-0.5">Select a channel above</p>
+                  <p className="text-[11px] text-slate-500">Channel preview will appear automatically</p>
                 </div>
               )}
             </div>
           )}
         </div>
 
+        {/* Schedule Field */}
         <div>
-          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Schedule</label>
+          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+            Schedule (Optional)
+          </label>
           <input 
             type="datetime-local" 
-            className="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm text-gray-700 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none"
+            className="w-full border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 bg-slate-900/90 hover:bg-slate-900 focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none shadow-inner"
             value={scheduleAt}
             disabled={activeTeam?.role === 'viewer'}
             onChange={(e) => setScheduleAt(e.target.value)}
@@ -424,30 +564,37 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
         </div>
       </div>
 
-      <div className="flex gap-2 mt-2">
+      {/* Action Buttons */}
+      <div className="flex gap-2.5 mt-2">
         {scheduleAt ? (
           <button 
+            type="button"
             onClick={() => handleCreatePost('schedule')}
             disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null}
-            className="w-full bg-linear-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:pointer-events-none"
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-semibold text-xs shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
           >
-            {optimisticPost ? 'Scheduling...' : 'Schedule Post'}
+            {optimisticPost ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />}
+            <span>{optimisticPost ? 'Scheduling...' : 'Schedule Post'}</span>
           </button>
         ) : (
           <>
             <button 
+              type="button"
               onClick={() => handleCreatePost('publish')}
               disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null}
-              className="flex-1 bg-linear-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:pointer-events-none"
+              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-semibold text-xs shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
             >
-              {optimisticPost ? 'Publishing...' : 'Publish Now'}
+              {optimisticPost ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              <span>{optimisticPost ? 'Publishing...' : 'Publish Now'}</span>
             </button>
             <button 
+              type="button"
               onClick={() => handleCreatePost('draft')}
               disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null}
-              className="flex-1 bg-white border-2 border-indigo-100 text-indigo-600 py-3 rounded-xl font-bold hover:bg-indigo-50 hover:border-indigo-200 transition-all disabled:opacity-50 disabled:pointer-events-none"
+              className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 py-2.5 rounded-xl font-semibold text-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5 shadow-xs"
             >
-              {optimisticPost ? 'Saving...' : 'Save Draft'}
+              <Bookmark className="w-3.5 h-3.5 text-slate-400" />
+              <span>{optimisticPost ? 'Saving...' : 'Save Draft'}</span>
             </button>
           </>
         )}

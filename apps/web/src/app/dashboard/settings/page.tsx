@@ -40,17 +40,17 @@ function TeamNameEditor({ team, userId, fetchUserTeams }: { team: Team; userId: 
   };
 
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-2.5">
       <input
         type="text"
         value={teamNameInput}
         onChange={e => setTeamNameInput(e.target.value)}
-        className="border p-2 text-sm rounded flex-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+        className="rounded-xl border border-slate-700 bg-slate-900/90 px-3.5 py-2 text-sm text-white placeholder-slate-500 flex-1 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
       />
       <button
         onClick={handleRenameTeam}
         disabled={savingName || !teamNameInput.trim() || teamNameInput.trim() === team.name}
-        className="bg-indigo-600 text-white px-4 py-2 text-sm rounded font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+        className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-semibold text-white transition-all disabled:opacity-50"
       >
         {savingName ? 'Saving...' : 'Save'}
       </button>
@@ -122,42 +122,45 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6 pb-12">
       {/* Team Settings / Billing */}
-      <div className="bg-white p-6 rounded-lg shadow border-t-4 border-indigo-500">
+      <div className="rounded-2xl border border-slate-800 bg-[#0D131F] p-6 shadow-sm">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold">Team Settings</h2>
-          <span className="text-xs font-bold uppercase px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full">
+          <div>
+            <h2 className="text-xl font-bold text-white tracking-tight">Team Settings</h2>
+            <p className="text-sm text-slate-400 mt-1">Manage team preferences, members, and subscription.</p>
+          </div>
+          <span className="text-xs font-semibold uppercase px-2.5 py-1 bg-indigo-950/60 border border-indigo-800/50 text-indigo-400 rounded-full">
             {activeTeam?.plan} PLAN
           </span>
         </div>
 
         <div className="mb-8">
-          <h3 className="text-sm font-semibold mb-3">Team Name</h3>
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Team Name</h3>
           {activeTeam?.role === 'owner' && user ? (
             <TeamNameEditor key={activeTeam.id} team={activeTeam} userId={user.id} fetchUserTeams={fetchUserTeams} />
           ) : (
-            <p className="text-sm text-gray-500">Only the team owner can rename this team.</p>
+            <p className="text-sm text-slate-400">Only the team owner can rename this team.</p>
           )}
         </div>
 
-        <hr className="my-6 border-gray-100" />
+        <hr className="my-6 border-slate-800/80" />
 
         {['owner', 'admin'].includes(activeTeam?.role as string) ? (
           <div className="mb-8">
-            <h3 className="text-sm font-semibold mb-3">Invite Member</h3>
-            <div className="flex gap-2">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Invite Member</h3>
+            <div className="flex gap-2.5">
               <input 
                 type="email" 
                 placeholder="Email address" 
                 value={inviteEmail} 
                 onChange={e => setInviteEmail(e.target.value)} 
-                className="border p-2 text-sm rounded flex-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" 
+                className="rounded-xl border border-slate-700 bg-slate-900/90 px-3.5 py-2 text-sm text-white placeholder-slate-500 flex-1 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" 
               />
               <select 
                 value={inviteRole} 
                 onChange={e => setInviteRole(e.target.value)} 
-                className="border p-2 text-sm rounded bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                className="rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-sm font-medium text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               >
                 <option value="admin">Admin</option>
                 <option value="editor">Editor</option>
@@ -165,56 +168,56 @@ export default function SettingsPage() {
               </select>
               <button 
                 onClick={handleInvite} 
-                className="bg-indigo-600 text-white px-4 py-2 text-sm rounded font-medium hover:bg-indigo-700 transition-colors"
+                className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-semibold text-white transition-all"
               >
                 Invite
               </button>
             </div>
           </div>
         ) : (
-          <p className="text-sm text-gray-500 mb-6">You do not have permission to invite new members to this team.</p>
+          <p className="text-sm text-slate-400 mb-6">You do not have permission to invite new members to this team.</p>
         )}
 
-        <hr className="my-6 border-gray-100" />
+        <hr className="my-6 border-slate-800/80" />
 
         {activeTeam?.role === 'owner' ? (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Billing</h3>
-            <p className="text-sm text-gray-600 mb-4">Manage your team&apos;s subscription plan. (Mock Implementation)</p>
+          <div className="mb-8">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Billing</h3>
+            <p className="text-sm text-slate-400 mb-4">Manage your team&apos;s subscription plan.</p>
             {activeTeam?.plan === 'free' ? (
               <button 
                 onClick={() => handleBilling('pro')} 
-                className="bg-yellow-500 text-white text-sm px-6 py-2 rounded font-medium hover:bg-yellow-600 transition-colors"
+                className="rounded-xl bg-amber-600 hover:bg-amber-500 px-5 py-2.5 text-xs font-semibold text-white transition-all"
               >
                 Upgrade to Pro Plan
               </button>
             ) : (
               <button 
                 onClick={() => handleBilling('free')} 
-                className="bg-gray-200 text-gray-800 text-sm px-6 py-2 rounded font-medium hover:bg-gray-300 transition-colors"
+                className="rounded-xl border border-slate-700 bg-slate-800 px-6 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-700 transition-all"
               >
                 Downgrade to Free Plan
               </button>
             )}
           </div>
         ) : (
-          <div>
-             <h3 className="text-sm font-semibold mb-3">Billing</h3>
-             <p className="text-sm text-gray-500">Only the team owner can manage billing settings.</p>
+          <div className="mb-8">
+             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Billing</h3>
+             <p className="text-sm text-slate-400">Only the team owner can manage billing settings.</p>
           </div>
         )}
 
-        <hr className="my-6 border-gray-100" />
+        <hr className="my-6 border-slate-800/80" />
 
         <div>
-          <h3 className="text-sm font-semibold mb-3">AI Assistant</h3>
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">AI Assistant</h3>
           {activeTeam?.role === 'owner' ? (
-            <div className="flex items-start justify-between gap-4 rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <div className="flex items-start justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4.5 backdrop-blur-md">
               <div>
-                <p className="text-sm font-medium text-gray-800">Auto-send AI replies</p>
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="text-sm font-bold text-white">Auto-send AI replies</p>
+                <p className="mt-1 text-xs text-slate-400 leading-relaxed">
                   When on, comments the AI is confident about (not spam, not a complaint) are replied to automatically instead of only suggested.
-                  Negative or spam comments are <span className="font-semibold">never</span> auto-replied to, and this never overrides that.
+                  Negative or spam comments are <span className="font-semibold text-rose-400">never</span> auto-replied to, and this never overrides that.
                   Off by default - review suggestions yourself on the Comments page until you trust it.
                 </p>
               </div>
@@ -224,13 +227,13 @@ export default function SettingsPage() {
                 aria-checked={!!activeTeam?.ai_auto_reply_enabled}
                 onClick={() => handleToggleAutoReply(!activeTeam?.ai_auto_reply_enabled)}
                 disabled={savingAutoReply}
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${activeTeam?.ai_auto_reply_enabled ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${activeTeam?.ai_auto_reply_enabled ? 'bg-indigo-600 shadow-md shadow-indigo-500/40' : 'bg-slate-800 border border-slate-700'}`}
               >
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${activeTeam?.ai_auto_reply_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
           ) : (
-            <p className="text-sm text-gray-500">Only the team owner can change the AI auto-reply setting.</p>
+            <p className="text-sm text-slate-400">Only the team owner can change the AI auto-reply setting.</p>
           )}
         </div>
       </div>

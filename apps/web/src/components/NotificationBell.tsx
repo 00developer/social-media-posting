@@ -29,13 +29,13 @@ export function NotificationList({ notifications, highlightIds, showOlder, onTog
   const renderItem = (n: NotificationLike) => {
     const isNew = highlightIds.has(n.id) || !n.read;
     return (
-      <li key={n.id} className={`flex gap-3 px-4 py-3 border-b border-gray-50 last:border-b-0 ${isNew ? 'bg-indigo-50/60' : ''}`}>
+      <li key={n.id} className={`flex gap-3 px-4 py-3 border-b border-slate-800/60 last:border-b-0 ${isNew ? 'bg-indigo-950/40' : ''}`}>
         <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dotColor(n.type)}`} aria-hidden="true" />
         <div className="min-w-0">
-          <p className="text-[13px] leading-relaxed text-gray-700 wrap-break-word">{n.message ?? ''}</p>
-          <p className="mt-0.5 text-[11px] text-gray-400">
+          <p className="text-[13px] leading-relaxed text-slate-200 wrap-break-word">{n.message ?? ''}</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">
             {formatRelativeTime(n.created_at, now)}
-            {isNew && <span className="ml-2 font-bold uppercase tracking-wider text-indigo-500">New</span>}
+            {isNew && <span className="ml-2 font-bold uppercase tracking-wider text-indigo-400">New</span>}
           </p>
         </div>
       </li>
@@ -43,28 +43,28 @@ export function NotificationList({ notifications, highlightIds, showOlder, onTog
   };
 
   if (notifications.length === 0) {
-    return <p className="px-4 py-8 text-center text-sm text-gray-400">No notifications yet.</p>;
+    return <p className="px-4 py-8 text-center text-sm text-slate-400">No notifications yet.</p>;
   }
 
   return (
     <div>
       {recent.length === 0 ? (
-        <p className="px-4 py-6 text-center text-sm text-gray-400">You&apos;re all caught up. Nothing in the last {RECENT_DAYS} days.</p>
+        <p className="px-4 py-6 text-center text-sm text-slate-400">You&apos;re all caught up. Nothing in the last {RECENT_DAYS} days.</p>
       ) : (
         <ul>{recent.map(renderItem)}</ul>
       )}
 
       {older.length > 0 && (
-        <div className="border-t border-gray-100">
+        <div className="border-t border-slate-800">
           <button
             type="button"
             onClick={onToggleOlder}
             aria-expanded={showOlder}
-            className="w-full px-4 py-2.5 text-left text-xs font-semibold text-indigo-600 hover:bg-gray-50"
+            className="w-full px-4 py-2.5 text-left text-xs font-semibold text-indigo-400 hover:bg-slate-800/60"
           >
             {showOlder ? 'Hide older' : `Show older (${older.length})`}
           </button>
-          {showOlder && <ul className="border-t border-gray-100">{older.map(renderItem)}</ul>}
+          {showOlder && <ul className="border-t border-slate-800">{older.map(renderItem)}</ul>}
         </div>
       )}
     </div>
@@ -131,11 +131,11 @@ export function NotificationBell({ notifications, onMarkRead }: NotificationBell
         aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
         aria-haspopup="true"
         aria-expanded={open}
-        className="relative rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+        className="relative rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
       >
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
         {badge && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-xs">
             {badge}
           </span>
         )}
@@ -145,15 +145,15 @@ export function NotificationBell({ notifications, onMarkRead }: NotificationBell
         <div
           role="region"
           aria-label="Notifications"
-          className="absolute right-0 top-full z-30 mt-2 max-h-[70vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-2xl border border-gray-100 bg-white shadow-xl"
+          className="absolute right-0 top-full z-30 mt-2 max-h-[70vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-2xl border border-slate-800 bg-[#0e1322] shadow-2xl backdrop-blur-2xl"
         >
-          <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-4 py-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Updates</h3>
+          <div className="sticky top-0 flex items-center justify-between border-b border-slate-800 bg-[#0e1322]/95 backdrop-blur-md px-4 py-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Updates</h3>
             <button
               type="button"
               onClick={markAllRead}
               disabled={unread === 0 && highlight.size === 0}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:pointer-events-none disabled:opacity-40"
+              className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 disabled:pointer-events-none disabled:opacity-40"
             >
               Mark all read
             </button>

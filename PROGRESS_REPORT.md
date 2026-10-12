@@ -1,3 +1,24 @@
+# Bug Fixes & Troubleshooting (2026-10-09)
+
+## 1. "Publishing..." State Hanging (Redis Connection Issue)
+- **Symptom:** Posts would get stuck on the "Uploading..." or "Publishing..." state indefinitely, and refreshing the page would show the post saved as a DRAFT.
+- **Root Cause:** Both the `scheduling-service` and `worker` in Coolify were throwing `ENOTFOUND` errors because they were trying to connect to a deleted Upstash Redis database (`trusty-finch-288602.upstash.io`). This caused the BullMQ queue (`publishQueue.add`) to hang indefinitely waiting for a connection, which in turn caused the frontend HTTP request to hang.
+- **Fix:** Created a new Upstash Redis database (`correct-javelin-317514.upstash.io`) and updated `REDIS_URL`, `UPSTASH_REDIS_REST_URL`, and `UPSTASH_REDIS_REST_TOKEN` in the Coolify environment variables. Services were redeployed to pick up the new credentials.
+
+## 2. Threads OAuth Connection Failure
+- **Symptom:** Pop-up error when trying to connect a Threads account.
+- **Root Cause:** The `account-service` logs showed: `Error: This action requires the threads_basic permission. You must submit for app review, or your user must be in the list of Threads testers.` The Meta app is in "Live" mode but lacks Advanced Access, and the test account was not added to the Threads Testers list.
+- **Fix:** Instructed the user to add the Instagram/Threads account as a "Tester" in the Meta Developer Portal and accept the tester invite via Instagram to allow connections without App Review.
+
+## 3. YouTube (Google OAuth) "Access blocked" Error
+- **Symptom:** Error 403 `access_denied` stating "sslip.io has not completed the Google verification process. The app is currently being tested..."
+- **Root Cause:** The Google Cloud OAuth consent screen is set to "Testing" publishing status. In this mode, only emails explicitly added to the "Test users" list can authorize the app.
+- **Fix:** Provided two options:
+  1. **Quick Fix (Testing):** Add `aiagentix2025@gmail.com` to the "Test users" list in Google Cloud Console -> APIs & Services -> OAuth consent screen.
+  2. **Production Fix:** Click "Push to production" to start the Google Verification Process, which requires a verified domain, privacy policy, and a scope justification demo video for YouTube API access.
+
+---
+
 # Calendar Integration — Progress Report
 
 Previous project-level report (YouTube Shorts, Reels, notifications, LinkedIn Step 1) was overwritten by an earlier Calendar report; it is archived at `docs/archive/PROJECT_PROGRESS_REPORT_2026-09-19.md`. Its LinkedIn claims (OAuth callback + 60-day refresh in account-service) do **not** match the code — only the authorize URL exists.

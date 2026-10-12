@@ -71,59 +71,59 @@ export default function AccountsPage() {
   const { fetchTeamData } = useDashboard();
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
-            <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+      <div className="rounded-2xl border border-slate-800 bg-[#0d131f] p-6 shadow-xs">
+        <div className="mb-6 flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+            <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Connected Accounts</h2>
-            <p className="text-sm text-gray-500 mt-1">Manage the social platforms connected to your workspace.</p>
+            <h2 className="text-xl font-bold text-white tracking-tight">Connected Accounts</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Manage the social platforms connected to your workspace.</p>
           </div>
         </div>
 
         {accounts.length === 0 ? (
-          <div className="bg-gray-50 rounded-2xl p-10 text-center border border-gray-100 mb-8">
-            <h3 className="text-lg font-semibold text-gray-700 mb-1">No platforms connected</h3>
-            <p className="text-sm text-gray-500">Connect a platform below to start publishing.</p>
+          <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/40 p-8 text-center mb-6">
+            <h3 className="text-sm font-semibold text-white mb-1">No platforms connected</h3>
+            <p className="text-xs text-slate-400">Connect a platform below to start publishing.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
             {accounts.map(acc => {
               const label = getAccountLabel(acc);
               const isExpiringSoon = acc.platform === 'linkedin' && typeof acc.refresh_token_expires_at === 'string' && new Date(acc.refresh_token_expires_at).getTime() - Date.now() < 30 * 24 * 60 * 60 * 1000;
               
               return (
-              <div key={acc.id} className="bg-white border border-gray-200 p-4 rounded-2xl flex items-center justify-between shadow-sm hover:border-indigo-200 transition-colors group">
+              <div key={acc.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 flex items-center justify-between hover:border-slate-700 transition-colors">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center border border-gray-100">
-                    <span className="capitalize font-bold text-gray-700">{(acc.platform || '').charAt(0)}</span>
+                  <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
+                    <span className="capitalize font-bold text-xs text-indigo-400">{(acc.platform || '').charAt(0)}</span>
                   </div>
                   <div>
-                    <h4 className="font-semibold text-gray-900 capitalize">{acc.platform || 'Unknown'}</h4>
+                    <h4 className="font-semibold text-xs text-white capitalize">{acc.platform || 'Unknown'}</h4>
                     {label ? (
-                      <p className="text-sm text-indigo-700 font-semibold truncate max-w-56" title={label}>{label}</p>
+                      <p className="text-xs text-indigo-400 font-medium truncate max-w-52" title={label}>{label}</p>
                     ) : (
-                      <p className="text-xs text-gray-500 font-medium">Active Connection</p>
+                      <p className="text-[11px] text-slate-400">Active</p>
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   {isExpiringSoon && (
-                    <span className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-3 py-1 rounded-full font-bold uppercase tracking-wider">
-                      Reconnect Required Soon
+                    <span className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded-md font-medium">
+                      Expiring Soon
                     </span>
                   )}
-                  <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-3 py-1 rounded-full font-bold uppercase tracking-wider">
+                  <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-md font-medium">
                     Connected
                   </span>
                   <button 
                     onClick={() => handleDisconnect(acc.id)}
-                    className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                    className="text-slate-400 hover:text-rose-400 p-1.5 rounded-lg transition-colors hover:bg-slate-800"
                     title="Disconnect account"
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   </button>
                 </div>
               </div>
@@ -132,9 +132,9 @@ export default function AccountsPage() {
           </div>
         )}
         
-        <div className="border-t border-gray-100 pt-8">
-          <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Connect New Platform</h3>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="border-t border-slate-800 pt-6">
+          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Connect Platform</h3>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {['twitter', 'facebook', 'instagram', 'youtube', 'linkedin', 'tiktok', 'pinterest', 'threads'].map(platform => {
               const isConnected = accounts.some(a => a.platform === platform);
               return (
@@ -142,15 +142,15 @@ export default function AccountsPage() {
                   key={platform}
                   disabled={!activeTeam || activeTeam?.role === 'viewer' || isConnected} 
                   onClick={() => handleConnect(platform)} 
-                  className={`relative overflow-hidden group p-4 rounded-2xl border text-left transition-all duration-300 ${isConnected ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed' : 'bg-white border-gray-200 hover:border-indigo-400 hover:shadow-md hover:shadow-indigo-100'}`}
+                  className={`p-3.5 rounded-xl border text-left transition-colors ${isConnected ? 'bg-slate-900/30 border-slate-800/60 opacity-50 cursor-not-allowed' : 'bg-slate-900/50 border-slate-800 hover:border-slate-700 hover:bg-slate-900'}`}
                 >
                   <div className="flex justify-between items-start mb-2">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isConnected ? 'bg-gray-200' : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors'}`}>
-                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isConnected ? 'bg-slate-800 text-slate-500' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
+                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                     </div>
                   </div>
-                  <h4 className="font-bold text-gray-900 capitalize mb-1">{platform}</h4>
-                  <p className="text-xs text-gray-500 font-medium">{isConnected ? 'Already connected' : 'Click to connect'}</p>
+                  <h4 className="font-semibold text-xs text-white capitalize">{platform}</h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{isConnected ? 'Connected' : 'Connect account'}</p>
                 </button>
               )
             })}

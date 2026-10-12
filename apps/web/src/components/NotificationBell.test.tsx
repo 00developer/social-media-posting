@@ -60,7 +60,7 @@ describe('NotificationList', () => {
   it('marks unread and highlighted items as New, and read items not', () => {
     const html = list([n('a', 'unread one'), n('b', 'read one', { read: true }), n('c', 'was unread when opened', { read: true })], { highlight: ['c'] });
     expect(html.match(/>New</g)?.length).toBe(2);
-    expect(html).toContain('bg-indigo-50/60');
+    expect(html).toContain('bg-indigo-950/40');
   });
 
   it('colours the dot by type', () => {

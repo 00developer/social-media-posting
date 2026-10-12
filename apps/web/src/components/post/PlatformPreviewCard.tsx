@@ -13,19 +13,20 @@ export type VideoSize = { width: number; height: number };
 
 export const VideoPlayer = ({ src, className, onMetadata }: { src: string, className?: string, onMetadata?: (size: VideoSize) => void }) => {
   const cleanSrc = src.split('#')[0];
+  const videoSrc = cleanSrc ? `${cleanSrc}#t=0.001` : '';
 
   return (
     <video
-      src={cleanSrc}
+      src={videoSrc}
       className={className}
       muted
       loop
       playsInline
       autoPlay
       crossOrigin="anonymous"
-      preload="auto"
+      preload="metadata"
       onLoadedMetadata={(e) => onMetadata?.({ width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })}
-      style={{ overflowClipMargin: 'unset', overflow: 'visible', backgroundColor: 'black', transform: 'translateZ(0)', willChange: 'transform' }}
+      style={{ overflowClipMargin: 'unset', overflow: 'visible', backgroundColor: '#0f172a', transform: 'translateZ(0)', willChange: 'transform' }}
     />
   );
 };
@@ -41,29 +42,29 @@ type PlatformPreviewCardProps = {
 
 const PlatformCard = ({ platform, content, mediaUrl, isVideo, contentType, onVideoMetadata }: PlatformPreviewCardProps & { onVideoMetadata?: (size: VideoSize) => void }) => {
   const renderHeader = () => (
-    <div className="flex items-center gap-3 p-3">
-      <div className="w-8 h-8 rounded-full bg-linear-to-tr from-indigo-100 to-purple-100 flex items-center justify-center border border-gray-200 shrink-0">
-         <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+    <div className="flex items-center gap-3 p-3.5">
+      <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 shrink-0 text-slate-300">
+         <svg className="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
       </div>
       <div>
-        <div className="h-2.5 w-24 bg-gray-800/10 rounded-full mb-1"></div>
-        <div className="h-2 w-16 bg-gray-800/5 rounded-full"></div>
+        <div className="h-2.5 w-24 bg-slate-700 rounded-full mb-1.5"></div>
+        <div className="h-2 w-16 bg-slate-800 rounded-full"></div>
       </div>
       {platform === 'instagram' && (
          <div className="ml-auto flex gap-1">
-           <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-           <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-           <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+           <div className="w-1 h-1 bg-slate-500 rounded-full"></div>
+           <div className="w-1 h-1 bg-slate-500 rounded-full"></div>
+           <div className="w-1 h-1 bg-slate-500 rounded-full"></div>
          </div>
       )}
     </div>
   );
 
-  const renderText = (className = "px-3 pb-3 text-[13px]") => {
+  const renderText = (className = "px-3.5 pb-3.5 text-[13px]") => {
     if (!content) return null;
     return (
       <div className={className}>
-        <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{content}</p>
+        <p className="text-slate-100 whitespace-pre-wrap leading-relaxed">{content}</p>
       </div>
     );
   };
@@ -103,44 +104,44 @@ const PlatformCard = ({ platform, content, mediaUrl, isVideo, contentType, onVid
 
   const renderActionBar = (type = "default") => {
     if (type === 'instagram') return (
-      <div className="flex items-center gap-4 p-3 pb-1">
-         <div className="w-5 h-5 border-[1.5px] border-gray-800 rounded-full"></div>
-         <div className="w-5 h-5 border-[1.5px] border-gray-800 rounded-full"></div>
-         <div className="w-5 h-5 border-[1.5px] border-gray-800 rounded-full"></div>
-         <div className="w-4 h-5 border-[1.5px] border-gray-800 ml-auto"></div>
+      <div className="flex items-center gap-4 p-3.5 pb-1.5">
+         <div className="w-5 h-5 border-[1.5px] border-slate-400 rounded-full"></div>
+         <div className="w-5 h-5 border-[1.5px] border-slate-400 rounded-full"></div>
+         <div className="w-5 h-5 border-[1.5px] border-slate-400 rounded-full"></div>
+         <div className="w-4 h-5 border-[1.5px] border-slate-400 ml-auto"></div>
       </div>
     );
     if (type === 'twitter') return (
-      <div className="flex items-center justify-between p-3 pt-2 w-4/5 text-gray-400">
-         <div className="w-4 h-4 bg-gray-400 rounded-full"></div>
-         <div className="w-4 h-4 bg-gray-400 rounded-full"></div>
-         <div className="w-4 h-4 bg-gray-400 rounded-full"></div>
-         <div className="w-4 h-4 bg-gray-400 rounded-full"></div>
+      <div className="flex items-center justify-between p-3.5 pt-2 w-4/5 text-slate-400">
+         <div className="w-4 h-4 bg-slate-700 rounded-full"></div>
+         <div className="w-4 h-4 bg-slate-700 rounded-full"></div>
+         <div className="w-4 h-4 bg-slate-700 rounded-full"></div>
+         <div className="w-4 h-4 bg-slate-700 rounded-full"></div>
       </div>
     );
     return (
-      <div className="flex items-center gap-4 p-3 pt-2">
-         <div className="w-5 h-5 bg-gray-200 rounded-full"></div>
-         <div className="w-5 h-5 bg-gray-200 rounded-full"></div>
-         <div className="w-5 h-5 bg-gray-200 rounded-full"></div>
+      <div className="flex items-center gap-4 p-3.5 pt-2">
+         <div className="w-5 h-5 bg-slate-700 rounded-full"></div>
+         <div className="w-5 h-5 bg-slate-700 rounded-full"></div>
+         <div className="w-5 h-5 bg-slate-700 rounded-full"></div>
       </div>
     );
   };
 
   if (platform === 'instagram') {
     return (
-      <div className="flex flex-col bg-white w-full border border-gray-200 shadow-sm mx-auto max-w-100">
+      <div className="flex flex-col bg-[#0b0f19] w-full border border-slate-800 rounded-2xl shadow-xl mx-auto max-w-100 overflow-hidden">
         {renderHeader()}
         {renderMedia()}
         {renderActionBar("instagram")}
-        {renderText("px-3 pb-4 pt-1 text-[13px]")}
+        {renderText("px-3.5 pb-4 pt-1 text-[13px]")}
       </div>
     );
   }
 
   if (platform === 'tiktok') {
     return (
-      <div className="relative w-full max-w-75 mx-auto bg-black overflow-hidden flex items-center justify-center aspect-9/16 rounded-md shadow-md">
+      <div className="relative w-full max-w-75 mx-auto bg-black overflow-hidden flex items-center justify-center aspect-9/16 rounded-2xl shadow-2xl border border-slate-800">
         {mediaUrl ? (
           isVideo ? (
             <VideoPlayer key={`${platform}-${mediaUrl}`} src={mediaUrl} onMetadata={onVideoMetadata} className="object-contain w-full h-full opacity-90" />
@@ -149,8 +150,8 @@ const PlatformCard = ({ platform, content, mediaUrl, isVideo, contentType, onVid
             <img src={mediaUrl} className="object-contain w-full h-full opacity-90" alt="Preview" />
           )
         ) : (
-          <div className="w-full h-full bg-gray-900 flex items-center justify-center p-6 text-center">
-             <span className="text-white/30 text-xs">Video content will appear here</span>
+          <div className="w-full h-full bg-slate-900 flex items-center justify-center p-6 text-center">
+             <span className="text-white/40 text-xs">Video content will appear here</span>
           </div>
         )}
         
@@ -172,16 +173,16 @@ const PlatformCard = ({ platform, content, mediaUrl, isVideo, contentType, onVid
 
   if (platform === 'pinterest') {
     return (
-      <div className="flex flex-col bg-white w-full max-w-[320px] mx-auto p-4 rounded-3xl shadow-lg border border-gray-100">
+      <div className="flex flex-col bg-[#0b0f19] w-full max-w-[320px] mx-auto p-4 rounded-3xl shadow-xl border border-slate-800">
         {mediaUrl && (
           <div className="rounded-2xl overflow-hidden mb-3">
             {renderMedia()}
           </div>
         )}
-        {renderText("px-1 pb-2 text-[15px] font-bold text-gray-900")}
+        {renderText("px-1 pb-2 text-[15px] font-bold text-white")}
         <div className="flex items-center gap-2 px-1">
-           <div className="w-6 h-6 bg-gray-200 rounded-full"></div>
-           <div className="h-2 w-16 bg-gray-200 rounded-full"></div>
+           <div className="w-6 h-6 bg-slate-700 rounded-full"></div>
+           <div className="h-2 w-16 bg-slate-800 rounded-full"></div>
         </div>
       </div>
     );
@@ -189,12 +190,12 @@ const PlatformCard = ({ platform, content, mediaUrl, isVideo, contentType, onVid
 
   // Default for Twitter, LinkedIn, Facebook, etc.
   return (
-    <div className="flex flex-col bg-white w-full max-w-112.5 mx-auto border border-gray-100 shadow-sm rounded-xl overflow-hidden mt-2 mb-2">
+    <div className="flex flex-col bg-[#0b0f19] w-full max-w-112.5 mx-auto border border-slate-800 shadow-xl rounded-2xl overflow-hidden mt-2 mb-2">
       {renderHeader()}
       {renderText()}
       {mediaUrl && (
-        <div className="px-3 pb-2">
-          <div className="rounded-xl overflow-hidden border border-gray-100">
+        <div className="px-3.5 pb-2.5">
+          <div className="rounded-xl overflow-hidden border border-slate-800">
             {renderMedia()}
           </div>
         </div>
@@ -219,7 +220,7 @@ export const PlatformPreviewCard = (props: PlatformPreviewCardProps) => {
         }}
       />
       {showReelWarning && (
-        <p role="status" className="mx-auto mt-2 max-w-112.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <p role="status" className="mx-auto mt-2 max-w-112.5 rounded-xl border border-amber-500/30 bg-amber-950/40 px-3.5 py-2.5 text-xs text-amber-300">
           {REEL_ORIENTATION_WARNING}
         </p>
       )}

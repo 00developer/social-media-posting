@@ -51,14 +51,14 @@ export function PostModalShell({ onClose, isBusy, ariaLabel, children }: PostMod
         aria-modal="true"
         aria-label={ariaLabel}
         tabIndex={-1}
-        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden outline-none"
+        className="relative bg-[#0e1322] border border-slate-800 text-slate-100 rounded-3xl shadow-2xl shadow-indigo-950/50 w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden outline-none backdrop-blur-2xl"
       >
         <button
           type="button"
           aria-label="Close"
           disabled={isBusy}
           onClick={onClose}
-          className="absolute top-3 right-3 z-10 p-2 bg-gray-50 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-900 shadow-sm transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          className="absolute top-4 right-4 z-10 p-2 bg-slate-900/80 border border-slate-800 rounded-full text-slate-400 hover:bg-slate-800 hover:text-white shadow-sm transition-colors disabled:opacity-40 disabled:pointer-events-none"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
         </button>

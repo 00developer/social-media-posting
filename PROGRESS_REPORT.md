@@ -1,3 +1,37 @@
+# Bug Fixes & Progress Report (2026-10-12)
+
+## 1. Publishing Timeout, Retries & Threads "fetch failed" Resolution
+- **Symptom:** When creating and publishing video posts across YouTube, Instagram, Facebook, and Threads, uploads initially failed, went into 2–3 automatic BullMQ retries before publishing, and Threads specifically failed with `"Threads: fetch failed"`.
+- **Root Cause:**
+  1. Video ingest and processing across Meta Threads, Instagram Reels, and YouTube Shorts takes between 30 and 90 seconds.
+  2. The Node.js Express server (`services/publishing-service`) operated with Node's default `headersTimeout` of 60 seconds. Once 60 seconds elapsed without written response headers, Node forcibly closed the client socket (`ECONNRESET`).
+  3. The `worker`'s native Node.js `fetch` received the closed socket and threw `TypeError: fetch failed`.
+  4. The worker retry system categorized `fetch failed` as transient, retrying after 1 min (attempt 2) and 2 min (attempt 3). On subsequent retries, if Meta had already cached the video container, publishing succeeded, but when Threads exceeded 60s repeatedly it permanently failed after 3 attempts.
+  5. Threads container status polling loop lacked per-request `try/catch` and had a short 24-iteration limit (120s), aborting the entire job on any transient network blip.
+- **Fix (Commit `d7877c2`):**
+  - **Extended Express Timeouts:** Set `headersTimeout`, `requestTimeout`, and `timeout` to 10 minutes (600,000 ms), with `keepAliveTimeout` set to 2 minutes in `publishing-service/src/index.ts`.
+  - **Resilient Polling:** Wrapped Threads and Instagram status polling requests in `try/catch`, allowing up to 5 consecutive network blips before failing, and extended max poll duration to 36 iterations (3 minutes).
+  - **Worker Lock & Timeout:** Added an explicit 10-minute `AbortSignal` to worker's fetch, configured BullMQ Worker `concurrency: 2` (parallel platform publishing), and set `lockDuration: 600_000` (10 minutes) so BullMQ does not mark long-running video uploads as stalled.
+  - **Granular Error Reporting:** Extracted `error.cause?.message` and HTTP response details instead of bubbling up generic `"fetch failed"`.
+
+## 2. YouTube Shorts Title & Description Formatting Fix
+- **Symptom:** Full post text including multiple newline characters was set as the YouTube video title, causing YouTube API/Studio upload rejection: *"New lines aren't allowed in title"*.
+- **Fix:** In `YouTubeAdapter`, extracted the first clean line as the title (sanitized `\r\n\t`, max 100 characters), while preserving the complete multi-line content with hashtags in the video description, appending `#Shorts` for reel content.
+
+## 3. UI Redesign & Video Preview Thumbnails (Tier-1 Obsidian Dark Theme)
+- **Symptom:** Video cards displayed black boxes instead of video frames, and draft posts prompted users with a browser prompt to manually type platform names.
+- **Fix (Commit `6a8db35`):**
+  - Appended `#t=0.001` to video preview URLs for automatic video frame thumbnail rendering.
+  - Added click-to-preview video modal with playback controls.
+  - Redesigned the Posts dashboard into a sleek Tier-1 Obsidian dark palette (`#090d16` canvas, `#0e1322` cards, slate-800 borders, micro-interactions).
+  - Streamlined draft publishing: clicking "Publish" automatically detects saved target platforms from `media_url` and `schedules` without browser prompts.
+
+## 4. Redis Cloud Migration & Dataset Optimization
+- **Action:** Migrated from Upstash to Redis Cloud instance (`redis://default:zPHbngbI55u3x9LbGE9cuujiez1smpJb@neostylish-famed-simple-90270.db.redis.io:10425`).
+- **Optimization:** Analyzed memory usage (3.2 MB / 30 MB free tier) and configured job pruning TTLs (`removeOnComplete: { age: 24h, count: 1000 }`, `removeOnFail: { age: 7d, count: 500 }`) in `scheduling-service` and `worker` to keep dataset memory consistently low.
+
+---
+
 # Bug Fixes & Troubleshooting (2026-10-09)
 
 ## 1. "Publishing..." State Hanging (Redis Connection Issue)

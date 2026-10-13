@@ -1,26 +1,159 @@
 @import "tailwindcss";
 
+/* Dark mode is class-based: an inline script in app/layout.tsx puts `dark` on <html> before first paint. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------
+   Design tokens. Components use the semantic utilities generated from
+   them (bg-canvas, bg-surface, border-line, text-fg, text-fg-muted ...)
+   instead of raw hex / slate classes, so both themes stay in sync.
+   ------------------------------------------------------------------ */
 :root {
-  --background: #090d16;
-  --foreground: #f8fafc;
+  color-scheme: light;
+
+  /* Page + surfaces */
+  --canvas: #f6f7fb;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --surface-hover: #f1f5f9;
+  --surface-strong: #e2e8f0;
+
+  /* Borders */
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+
+  /* Text (each meets WCAG AA on --surface and --canvas) */
+  --fg: #0f172a;
+  --fg-secondary: #334155;
+  --fg-muted: #475569;
+  --fg-subtle: #64748b;
+
+  /* Brand */
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-fg: #ffffff;
+  --primary-soft: #eef2ff;
+  --accent: #4f46e5;
+  --accent-hover: #3730a3;
+  --focus: #6366f1;
+
+  /* Overlays + elevation */
+  --overlay: rgb(15 23 42 / 0.45);
+  --shadow-card-value: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-pop-value: 0 12px 32px -8px rgb(15 23 42 / 0.18), 0 4px 10px -4px rgb(15 23 42 / 0.08);
+
+  /* Sidebar: dark navy in every theme */
+  --sidebar-bg: #0f1424;
+  --sidebar-fg: #cbd5e1;
+  --sidebar-fg-muted: #8a94a8;
+  --sidebar-active: #1c2440;
+  --sidebar-hover: #171e33;
+  --sidebar-line: rgb(255 255 255 / 0.07);
+
+  /* Charts */
+  --chart-grid: #e2e8f0;
+  --chart-axis: #64748b;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --canvas: #0b1020;
+  --surface: #121a2b;
+  --surface-muted: #0f1626;
+  --surface-hover: #1a2336;
+  --surface-strong: #243049;
+
+  --line: rgb(255 255 255 / 0.08);
+  --line-strong: rgb(255 255 255 / 0.14);
+
+  --fg: #f1f5f9;
+  --fg-secondary: #cbd5e1;
+  --fg-muted: #a3aec2;
+  --fg-subtle: #8591a7;
+
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --primary-fg: #ffffff;
+  --primary-soft: rgb(99 102 241 / 0.14);
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --focus: #818cf8;
+
+  --overlay: rgb(2 6 23 / 0.65);
+  --shadow-card-value: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-pop-value: 0 16px 40px -12px rgb(0 0 0 / 0.6);
+
+  --sidebar-bg: #0a0f1d;
+  --sidebar-active: #18203a;
+  --sidebar-hover: #131a2e;
+
+  --chart-grid: rgb(255 255 255 / 0.08);
+  --chart-axis: #8591a7;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--canvas);
+  --color-foreground: var(--fg);
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-strong: var(--surface-strong);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-soft: var(--primary-soft);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-focus: var(--focus);
+  --color-overlay: var(--overlay);
+
+  --color-sidebar: var(--sidebar-bg);
+  --color-sidebar-fg: var(--sidebar-fg);
+  --color-sidebar-fg-muted: var(--sidebar-fg-muted);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-line: var(--sidebar-line);
+
+  --shadow-card: var(--shadow-card-value);
+  --shadow-pop: var(--shadow-pop-value);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: #090d16;
-  color: #f8fafc;
+  background: var(--canvas);
+  color: var(--fg);
   font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Sleek dark scrollbar */
+/* Visible keyboard focus everywhere, in both themes. Components that draw their own ring
+   (focus-visible:ring-*) or turn the outline off still win, since utilities beat the base layer. */
+@layer base {
+  :where(a, button, [role="button"], summary, select, input, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+/* Native select dropdown items follow the theme. */
+option {
+  background-color: var(--surface);
+  color: var(--fg);
+}
+
+/* Slim themed scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -29,11 +162,11 @@ body {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: var(--line-strong);
   border-radius: 9999px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: var(--fg-subtle);
 }
 
 @keyframes pulse-subtle {
@@ -148,6 +281,20 @@ body {
   animation: chart-node-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-subtle,
+  .animate-gradient-x,
+  .animate-shimmer,
+  .animate-float-slow,
+  .animate-glow-pulse,
+  .animate-chart-draw,
+  .animate-chart-area,
+  .animate-chart-bar,
+  .animate-chart-node {
+    animation: none;
+  }
+}
+
 /* Calendar: every event opens its details / edit modal on click, for all roles. */
 .calendar-events-clickable .fc-event {
   cursor: pointer;
@@ -169,56 +316,68 @@ body {
   line-height: 21px;
   text-align: center;
   border-radius: 9999px;
-  background: #6366f1;
-  color: #fff;
+  background: var(--primary);
+  color: var(--primary-fg);
   font-size: 16px;
   font-weight: 700;
   pointer-events: none;
   box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
 }
 
-/* FullCalendar Obsidian Dark Theme */
+/* FullCalendar, themed through the design tokens (light and dark) */
 .fc {
-  --fc-border-color: #1e293b;
-  --fc-neutral-bg-color: #0e1322;
-  --fc-page-bg-color: #0d131f;
-  color: #f1f5f9;
+  --fc-border-color: var(--line);
+  --fc-neutral-bg-color: var(--surface-muted);
+  --fc-page-bg-color: var(--surface);
+  --fc-list-event-hover-bg-color: var(--surface-hover);
+  --fc-today-bg-color: transparent;
+  color: var(--fg);
 }
 .fc .fc-toolbar-title {
-  color: #f8fafc;
-  font-weight: 800;
+  color: var(--fg);
+  font-weight: 700;
   font-size: 1.25rem;
+  letter-spacing: -0.01em;
 }
 .fc .fc-button-primary {
-  background-color: #0f172a;
-  border-color: #334155;
-  color: #e2e8f0;
-  border-radius: 0.75rem;
+  background-color: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--fg-secondary);
+  border-radius: 0.5rem;
   font-weight: 600;
   text-transform: capitalize;
-  transition: all 0.2s;
+  box-shadow: var(--shadow-card-value);
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 .fc .fc-button-primary:hover {
-  background-color: #1e293b;
-  border-color: #475569;
-  color: #ffffff;
+  background-color: var(--surface-hover);
+  border-color: var(--line-strong);
+  color: var(--fg);
+}
+.fc .fc-button-primary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 .fc .fc-button-primary:disabled {
-  background-color: #090d16;
-  border-color: #1e293b;
-  color: #64748b;
+  background-color: var(--surface-muted);
+  border-color: var(--line);
+  color: var(--fg-subtle);
+  opacity: 1;
 }
 .fc .fc-button-primary:not(:disabled).fc-button-active,
 .fc .fc-button-primary:not(:disabled):active {
-  background-color: #6366f1;
-  border-color: #6366f1;
-  color: #ffffff;
+  background-color: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-fg);
 }
 .fc-theme-standard td, .fc-theme-standard th {
-  border-color: #1e293b !important;
+  border-color: var(--line) !important;
+}
+.fc .fc-col-header-cell {
+  background-color: var(--surface-muted);
 }
 .fc .fc-col-header-cell-cushion {
-  color: #94a3b8;
+  color: var(--fg-muted);
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -226,24 +385,47 @@ body {
   padding: 8px 4px;
 }
 .fc .fc-daygrid-day-number {
-  color: #94a3b8;
+  color: var(--fg-muted);
   font-size: 0.75rem;
   font-weight: 600;
   padding: 4px 8px;
 }
-.fc .fc-daygrid-day.fc-day-today {
-  background-color: rgba(99, 102, 241, 0.08) !important;
+.fc .fc-day-other .fc-daygrid-day-number {
+  color: var(--fg-subtle);
+}
+.fc .fc-timegrid-slot-label-cushion,
+.fc .fc-timegrid-axis-cushion,
+.fc .fc-list-day-text,
+.fc .fc-list-day-side-text {
+  color: var(--fg-muted);
+}
+.fc .fc-daygrid-day.fc-day-today,
+.fc .fc-timegrid-col.fc-day-today {
+  background-color: color-mix(in oklab, var(--primary) 7%, transparent) !important;
 }
 .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
-  color: #818cf8;
+  color: var(--accent);
   font-weight: 800;
 }
 .fc .fc-daygrid-day-frame {
   min-height: 85px;
 }
+.fc .fc-popover {
+  background-color: var(--surface);
+  border-color: var(--line);
+  box-shadow: var(--shadow-pop-value);
+}
+.fc .fc-popover-header {
+  background-color: var(--surface-muted);
+  color: var(--fg);
+}
+.fc .fc-more-link {
+  color: var(--accent);
+  font-weight: 600;
+}
 .fc-theme-standard .fc-scrollgrid {
-  border-color: #1e293b !important;
-  border-radius: 1rem;
+  border-color: var(--line) !important;
+  border-radius: 0.75rem;
   overflow: hidden;
 }
 

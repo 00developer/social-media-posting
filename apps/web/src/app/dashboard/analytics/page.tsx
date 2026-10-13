@@ -118,7 +118,7 @@ export default function AnalyticsPage() {
   const arrow = (key: SortKey) => (key === sortKey ? (sortDir === 'desc' ? ' ↓' : ' ↑') : '');
   const th = (key: SortKey, label: string, align = 'text-right') => (
     <th className={`px-4 py-3 ${align} font-semibold`}>
-      <button type="button" onClick={() => toggleSort(key)} className="uppercase tracking-wider hover:text-white text-slate-300 transition-colors">{label}{arrow(key)}</button>
+      <button type="button" onClick={() => toggleSort(key)} className="uppercase tracking-wider hover:text-fg text-fg-secondary transition-colors">{label}{arrow(key)}</button>
     </th>
   );
 
@@ -126,24 +126,24 @@ export default function AnalyticsPage() {
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight">Analytics</h2>
-          <p className="text-sm text-slate-400 mt-1">
+          <h2 className="text-2xl font-extrabold text-fg tracking-tight">Analytics</h2>
+          <p className="text-sm text-fg-muted mt-1">
             How your posts are performing on each platform.
-            {lastUpdated && <> Last updated <strong className="text-slate-300">{lastUpdated.toLocaleString()}</strong>.</>}
+            {lastUpdated && <> Last updated <strong className="text-fg-secondary">{lastUpdated.toLocaleString()}</strong>.</>}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <select value={rangeId} onChange={(e) => { setNowMs(Date.now()); setRangeId(e.target.value as typeof rangeId); }} className="rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-sm font-medium text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50" aria-label="Date range">
+          <select value={rangeId} onChange={(e) => { setNowMs(Date.now()); setRangeId(e.target.value as typeof rangeId); }} className="rounded-xl border border-line bg-surface-muted/90 px-3.5 py-2 text-sm font-medium text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/50" aria-label="Date range">
             {RANGES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
           </select>
-          <button type="button" onClick={() => { setNowMs(Date.now()); fetchTeamData(); setRefreshTick((t) => t + 1); }} className="rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 hover:text-white transition-all shadow-sm">Refresh</button>
+          <button type="button" onClick={() => { setNowMs(Date.now()); fetchTeamData(); setRefreshTick((t) => t + 1); }} className="rounded-xl border border-line bg-surface-muted/90 px-3.5 py-2 text-sm font-medium text-fg hover:bg-surface-hover hover:text-fg transition-all shadow-sm">Refresh</button>
         </div>
       </div>
 
       <div className="flex flex-wrap gap-2" role="group" aria-label="Platform">
         {['all', ...platformsWithStats].map((p) => (
           <button key={p} type="button" onClick={() => setPlatform(p)} aria-pressed={platform === p}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition-colors ${platform === p ? 'border-slate-700 bg-slate-800 text-white' : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
+            className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition-colors ${platform === p ? 'border-line-strong bg-surface-hover text-fg' : 'border-line bg-surface-muted/60 text-fg-muted hover:bg-surface-hover hover:text-fg'}`}>
             {p === 'all' ? 'All platforms' : p}
           </button>
         ))}
@@ -151,41 +151,41 @@ export default function AnalyticsPage() {
 
       <div className="grid grid-cols-2 gap-3.5 md:grid-cols-5">
         {METRICS.map((m) => (
-          <div key={m.key} className="rounded-xl border border-slate-800 bg-[#0d131f] p-4">
-            <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">Total {m.label}</div>
-            <div className="mt-1 text-xl sm:text-2xl font-bold text-white tracking-tight">{formatCount(summary[m.key])}</div>
+          <div key={m.key} className="rounded-xl border border-line bg-surface p-4">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-fg-muted">Total {m.label}</div>
+            <div className="mt-1 text-xl sm:text-2xl font-bold text-fg tracking-tight">{formatCount(summary[m.key])}</div>
           </div>
         ))}
-        <div className="rounded-xl border border-slate-800 bg-[#0d131f] p-4">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">Posts tracked</div>
-          <div className="mt-1 text-xl sm:text-2xl font-bold text-white tracking-tight">{summary.posts}</div>
-          <div className="mt-0.5 text-xs text-slate-400">{summary.platforms} platform{summary.platforms === 1 ? '' : 's'}</div>
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-fg-muted">Posts tracked</div>
+          <div className="mt-1 text-xl sm:text-2xl font-bold text-fg tracking-tight">{summary.posts}</div>
+          <div className="mt-0.5 text-xs text-fg-muted">{summary.platforms} platform{summary.platforms === 1 ? '' : 's'}</div>
         </div>
       </div>
 
       {best && (
-        <div className="rounded-xl border border-slate-800 bg-[#0d131f] p-4">
-          <div className="text-xs font-semibold text-indigo-400 flex items-center gap-1.5">
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <div className="text-xs font-semibold text-accent flex items-center gap-1.5">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-400" />
             Top Performing Post
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="font-medium text-white truncate max-w-md">{best.caption || '(no caption)'}</span>
-            <span className="text-xs capitalize text-slate-400">on <strong className="text-slate-200 font-medium">{best.platform}</strong></span>
-            <span className="text-xs font-semibold text-emerald-400">
+            <span className="font-medium text-fg truncate max-w-md">{best.caption || '(no caption)'}</span>
+            <span className="text-xs capitalize text-fg-muted">on <strong className="text-fg font-medium">{best.platform}</strong></span>
+            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
               {best.views ? `${formatCount(best.views)} views` : `${formatCount(best.likes ?? 0)} likes`}
             </span>
           </div>
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-800 bg-[#0d131f] p-4 sm:p-6 shadow-xs">
+      <div className="rounded-xl border border-line bg-surface p-4 sm:p-6 shadow-card">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="font-semibold text-white text-sm">Growth over time</h3>
+          <h3 className="font-semibold text-fg text-sm">Growth over time</h3>
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Chart mode">
             {([['gain', 'New since tracking'], ['total', 'Running total']] as const).map(([id, label]) => (
               <button key={id} type="button" onClick={() => setChartMode(id)} aria-pressed={chartMode === id}
-                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${chartMode === id ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
+                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${chartMode === id ? 'bg-primary text-white' : 'bg-surface-muted border border-line text-fg-muted hover:bg-surface-hover hover:text-fg'}`}>
                 {label}
               </button>
             ))}
@@ -199,7 +199,7 @@ export default function AnalyticsPage() {
                   disabled={unavailable}
                   aria-pressed={chartMetric === m.key}
                   title={unavailable ? 'This platform does not provide this number' : undefined}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${chartMetric === m.key ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 enabled:hover:bg-slate-800 enabled:hover:text-slate-200'}`}>
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${chartMetric === m.key ? 'bg-primary text-white' : 'bg-surface-muted border border-line text-fg-muted enabled:hover:bg-surface-hover enabled:hover:text-fg'}`}>
                   {m.label}
                 </button>
               );
@@ -209,20 +209,20 @@ export default function AnalyticsPage() {
         {historyReady ? (
           <AnalyticsChart data={chart} metricLabel={METRICS.find((m) => m.key === chartMetric)!.label} mode={chartMode} />
         ) : (
-          <p role="status" className="py-10 text-center text-sm text-slate-400">Loading history...</p>
+          <p role="status" className="py-10 text-center text-sm text-fg-muted">Loading history...</p>
         )}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-800 bg-[#0d131f]">
+      <div className="overflow-hidden rounded-2xl border border-line bg-surface">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-900/90 border-b border-slate-800 text-xs text-slate-400">
+            <thead className="bg-surface-muted/90 border-b border-line text-xs text-fg-muted">
               <tr>
                 <th className="px-4 py-3.5 text-left font-semibold">
                   <div className="flex items-center gap-3">
-                    <button type="button" onClick={() => toggleSort('postedAt')} className="uppercase tracking-wider hover:text-white text-slate-300 transition-colors">Post{arrow('postedAt')}</button>
+                    <button type="button" onClick={() => toggleSort('postedAt')} className="uppercase tracking-wider hover:text-fg text-fg-secondary transition-colors">Post{arrow('postedAt')}</button>
                     <select value={platform} onChange={(e) => setPlatform(e.target.value)} aria-label="Filter posts by platform"
-                      className="rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-medium tracking-normal text-slate-200 capitalize focus:outline-none">
+                      className="rounded-md border border-line-strong bg-surface-hover px-2.5 py-1 text-xs font-medium tracking-normal text-fg capitalize focus:outline-none">
                       <option value="all">All platforms</option>
                       {platformsWithStats.map((p) => <option key={p} value={p} className="capitalize">{p}</option>)}
                     </select>
@@ -235,41 +235,41 @@ export default function AnalyticsPage() {
                 {th('shares', 'Shares')}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-line">
               {sorted.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">No analytics for this selection yet. Stats appear a few minutes after a post is published.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-12 text-center text-fg-muted">No analytics for this selection yet. Stats appear a few minutes after a post is published.</td></tr>
               )}
               {sorted.map((r) => (
-                <tr key={r.key} className="hover:bg-slate-800/40 transition-colors">
+                <tr key={r.key} className="hover:bg-surface-hover/40 transition-colors">
                   <td className="max-w-xs px-4 py-3.5">
-                    <div className="truncate font-medium text-white" title={r.caption}>{r.caption || '(no caption)'}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">{r.postedAt ? new Date(r.postedAt).toLocaleDateString() : ''}</div>
+                    <div className="truncate font-medium text-fg" title={r.caption}>{r.caption || '(no caption)'}</div>
+                    <div className="text-xs text-fg-muted mt-0.5">{r.postedAt ? new Date(r.postedAt).toLocaleDateString() : ''}</div>
                   </td>
                   <td className="px-4 py-3.5">
-                    <span className="inline-flex items-center gap-2 capitalize text-slate-200 font-medium">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full ring-2 ring-slate-800" style={{ backgroundColor: colorFor(r.platform) }} />
+                    <span className="inline-flex items-center gap-2 capitalize text-fg font-medium">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full ring-2 ring-line" style={{ backgroundColor: colorFor(r.platform) }} />
                       {r.platform}
                     </span>
-                    {r.note && <div className="text-xs text-slate-400 mt-0.5" title={r.note}>{r.note}</div>}
+                    {r.note && <div className="text-xs text-fg-muted mt-0.5" title={r.note}>{r.note}</div>}
                   </td>
-                  <td className="px-4 py-3.5 text-right font-medium text-slate-200 tabular-nums">{fmt(r.views)}</td>
-                  <td className="px-4 py-3.5 text-right font-medium text-slate-200 tabular-nums">{fmt(r.likes)}</td>
-                  <td className="px-4 py-3.5 text-right font-medium text-slate-200 tabular-nums">{fmt(r.comments)}</td>
-                  <td className="px-4 py-3.5 text-right font-medium text-slate-200 tabular-nums">{fmt(r.shares)}</td>
+                  <td className="px-4 py-3.5 text-right font-medium text-fg tabular-nums">{fmt(r.views)}</td>
+                  <td className="px-4 py-3.5 text-right font-medium text-fg tabular-nums">{fmt(r.likes)}</td>
+                  <td className="px-4 py-3.5 text-right font-medium text-fg tabular-nums">{fmt(r.comments)}</td>
+                  <td className="px-4 py-3.5 text-right font-medium text-fg tabular-nums">{fmt(r.shares)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className="border-t border-slate-800/80 px-4 py-3 text-xs text-slate-400 font-medium">A dash (-) means the platform does not provide that number, which is different from 0.</p>
+        <p className="border-t border-line px-4 py-3 text-xs text-fg-muted font-medium">A dash (-) means the platform does not provide that number, which is different from 0.</p>
       </div>
 
       {missingNotes.length > 0 && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-950/30 p-5 backdrop-blur-xl">
-          <div className="mb-2 text-xs font-bold uppercase tracking-wider text-amber-400">Connected, but no stats yet</div>
-          <ul className="space-y-2 text-sm text-amber-200/90">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 p-5 backdrop-blur-xl">
+          <div className="mb-2 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Connected, but no stats yet</div>
+          <ul className="space-y-2 text-sm text-amber-800 dark:text-amber-200/90">
             {missingNotes.map((p) => (
-              <li key={p}><span className="font-semibold capitalize text-amber-100">{p}:</span> {PLATFORM_NOTES[p]}</li>
+              <li key={p}><span className="font-semibold capitalize text-amber-800 dark:text-amber-100">{p}:</span> {PLATFORM_NOTES[p]}</li>
             ))}
           </ul>
         </div>

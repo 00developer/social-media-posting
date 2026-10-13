@@ -107,34 +107,34 @@ export default function AccountsPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12">
-      <div className="rounded-2xl border border-slate-800 bg-[#0d131f] p-4 sm:p-6 shadow-xs">
+      <div className="rounded-xl border border-line bg-surface p-4 sm:p-6 shadow-card">
         <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-accent">
             <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
           </div>
           <div className="min-w-0">
-            <h2 className="text-xl font-bold text-white tracking-tight">Connected Accounts</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Manage the social platforms connected to your workspace.</p>
+            <h2 className="text-xl font-bold text-fg tracking-tight">Connected Accounts</h2>
+            <p className="text-xs text-fg-muted mt-0.5">Manage the social platforms connected to your workspace.</p>
           </div>
         </div>
 
         {!dataLoaded ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6" aria-busy="true" aria-label="Loading accounts">
             {[0, 1].map((i) => (
-              <div key={i} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 flex items-center gap-3 animate-pulse">
-                <div className="w-8 h-8 rounded-full bg-slate-800" />
+              <div key={i} className="rounded-xl border border-line bg-surface-muted/60 p-3.5 flex items-center gap-3 animate-pulse">
+                <div className="w-8 h-8 rounded-full bg-surface-hover" />
                 <div className="flex-1 space-y-1.5">
-                  <div className="h-3 w-20 rounded bg-slate-800" />
-                  <div className="h-2.5 w-32 rounded bg-slate-800/70" />
+                  <div className="h-3 w-20 rounded bg-surface-hover" />
+                  <div className="h-2.5 w-32 rounded bg-surface-hover/70" />
                 </div>
               </div>
             ))}
             <span className="sr-only">Loading accounts...</span>
           </div>
         ) : accounts.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/40 p-8 text-center mb-6">
-            <h3 className="text-sm font-semibold text-white mb-1">No platforms connected</h3>
-            <p className="text-xs text-slate-400">Connect a platform below to start publishing.</p>
+          <div className="rounded-xl border border-dashed border-line bg-surface-muted/40 p-8 text-center mb-6">
+            <h3 className="text-sm font-semibold text-fg mb-1">No platforms connected</h3>
+            <p className="text-xs text-fg-muted">Connect a platform below to start publishing.</p>
           </div>
         ) : (
           <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
@@ -145,27 +145,27 @@ export default function AccountsPage() {
               const disconnecting = disconnectingId === acc.id;
 
               return (
-                <li key={acc.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 hover:border-slate-700 transition-colors">
+                <li key={acc.id} className="rounded-xl border border-line bg-surface-muted/60 p-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 hover:border-line-strong transition-colors">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="w-8 h-8 shrink-0 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700" aria-hidden="true">
-                      <span className="capitalize font-bold text-xs text-indigo-400">{platform.charAt(0)}</span>
+                    <div className="w-8 h-8 shrink-0 rounded-full bg-surface-hover flex items-center justify-center border border-line-strong" aria-hidden="true">
+                      <span className="capitalize font-bold text-xs text-accent">{platform.charAt(0)}</span>
                     </div>
                     <div className="min-w-0">
-                      <h4 className="font-semibold text-xs text-white capitalize">{acc.platform || 'Unknown'}</h4>
+                      <h4 className="font-semibold text-xs text-fg capitalize">{acc.platform || 'Unknown'}</h4>
                       {label ? (
-                        <p className="text-xs text-indigo-400 font-medium truncate" title={label}>{label}</p>
+                        <p className="text-xs text-accent font-medium truncate" title={label}>{label}</p>
                       ) : (
-                        <p className="text-[11px] text-slate-400">Active</p>
+                        <p className="text-[11px] text-fg-muted">Active</p>
                       )}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
                     {isExpiringSoon && (
-                      <span className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded-md font-medium">
+                      <span className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded-md font-medium">
                         Expiring Soon
                       </span>
                     )}
-                    <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-md font-medium">
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-md font-medium">
                       Connected
                     </span>
                     {!isViewer && (
@@ -174,7 +174,7 @@ export default function AccountsPage() {
                         onClick={() => handleDisconnect(acc.id, platform)}
                         disabled={!!disconnectingId}
                         aria-busy={disconnecting}
-                        className="text-slate-400 hover:text-rose-400 p-1.5 rounded-lg transition-colors hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="text-fg-muted hover:text-rose-700 dark:hover:text-rose-400 p-1.5 rounded-lg transition-colors hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed"
                         title={disconnecting ? 'Disconnecting...' : `Disconnect ${platform}`}
                         aria-label={disconnecting ? `Disconnecting ${platform}` : `Disconnect ${platform}${label ? ` (${label})` : ''}`}
                       >
@@ -192,9 +192,9 @@ export default function AccountsPage() {
           </ul>
         )}
 
-        <div className="border-t border-slate-800 pt-6">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Connect Platform</h3>
-          {isViewer && <p className="mb-3 text-xs text-slate-500">Viewers cannot connect or disconnect accounts.</p>}
+        <div className="border-t border-line pt-6">
+          <h3 className="text-xs font-semibold text-fg-muted uppercase tracking-wider mb-3">Connect Platform</h3>
+          {isViewer && <p className="mb-3 text-xs text-fg-subtle">Viewers cannot connect or disconnect accounts.</p>}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {PLATFORMS.map(platform => {
               const isConnected = dataLoaded && accounts.some(a => a.platform === platform);
@@ -207,10 +207,10 @@ export default function AccountsPage() {
                   onClick={() => handleConnect(platform)}
                   aria-busy={connecting}
                   aria-label={isConnected ? `${platform} connected` : `Connect ${platform}`}
-                  className={`min-w-0 p-3.5 rounded-xl border text-left transition-colors disabled:cursor-not-allowed ${isConnected ? 'bg-slate-900/30 border-slate-800/60 opacity-50' : 'bg-slate-900/50 border-slate-800 hover:border-slate-700 hover:bg-slate-900 disabled:opacity-60 disabled:hover:bg-slate-900/50'}`}
+                  className={`min-w-0 p-3.5 rounded-xl border text-left transition-colors disabled:cursor-not-allowed ${isConnected ? 'bg-surface-muted/30 border-line opacity-50' : 'bg-surface-muted/50 border-line hover:border-line-strong hover:bg-surface-hover disabled:opacity-60 disabled:hover:bg-surface-hover/50'}`}
                 >
                   <div className="flex justify-between items-start mb-2">
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isConnected ? 'bg-slate-800 text-slate-500' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`} aria-hidden="true">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isConnected ? 'bg-surface-hover text-fg-subtle' : 'bg-indigo-500/10 text-accent border border-indigo-500/20'}`} aria-hidden="true">
                       {connecting ? (
                         <Spinner />
                       ) : (
@@ -218,8 +218,8 @@ export default function AccountsPage() {
                       )}
                     </div>
                   </div>
-                  <h4 className="font-semibold text-xs text-white capitalize truncate">{platform}</h4>
-                  <p className="text-[11px] text-slate-400 mt-0.5">{isConnected ? 'Connected' : connecting ? 'Waiting for sign-in...' : 'Connect account'}</p>
+                  <h4 className="font-semibold text-xs text-fg capitalize truncate">{platform}</h4>
+                  <p className="text-[11px] text-fg-muted mt-0.5">{isConnected ? 'Connected' : connecting ? 'Waiting for sign-in...' : 'Connect account'}</p>
                 </button>
               );
             })}

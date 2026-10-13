@@ -5,12 +5,12 @@ export const PLATFORM_COLORS: Record<string, string> = {
   youtube: '#ef4444',
   facebook: '#3b82f6',
   instagram: '#ec4899',
-  threads: '#e2e8f0',
+  threads: 'var(--fg-muted)',
   pinterest: '#f43f5e',
   linkedin: '#0284c7',
   twitter: '#38bdf8',
 };
-const FALLBACK_COLOR = '#94a3b8';
+const FALLBACK_COLOR = 'var(--fg-subtle)';
 export const colorFor = (platform: string) => PLATFORM_COLORS[platform] ?? FALLBACK_COLOR;
 
 const W = 660;
@@ -43,10 +43,10 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
   const activePlatform = hoverPlatform ?? pinnedPlatform;
 
   if (data.series.length === 0 || data.days.length === 0) {
-    return <p className="py-10 text-center text-sm text-slate-400">No {metricLabel.toLowerCase()} history for this selection. Either no numbers are saved yet, or this platform does not provide {metricLabel.toLowerCase()} (for example Facebook and Instagram views). Try another metric.</p>;
+    return <p className="py-10 text-center text-sm text-fg-muted">No {metricLabel.toLowerCase()} history for this selection. Either no numbers are saved yet, or this platform does not provide {metricLabel.toLowerCase()} (for example Facebook and Instagram views). Try another metric.</p>;
   }
   if (data.days.length < 2) {
-    return <p className="py-10 text-center text-sm text-slate-400">The chart needs at least two days of history. It fills in automatically as stats are collected each day.</p>;
+    return <p className="py-10 text-center text-sm text-fg-muted">The chart needs at least two days of history. It fills in automatically as stats are collected each day.</p>;
   }
 
   const ticks = niceScale(Math.max(...data.series.flatMap((s) => s.values.filter((v): v is number => v !== null)), 1));
@@ -98,15 +98,15 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
       {/* Floating Glassmorphic Tooltip (inside the chart box so the scroll container never clips it) */}
       {hoveredIdx !== null && (
         <div
-          className="pointer-events-none absolute top-0 z-30 flex flex-col gap-1.5 rounded-2xl border border-slate-700/80 bg-slate-900/95 p-3 text-xs shadow-2xl backdrop-blur-2xl transition-all duration-75"
+          className="pointer-events-none absolute top-0 z-30 flex flex-col gap-1.5 rounded-2xl border border-line-strong bg-surface-muted/95 p-3 text-xs shadow-pop transition-all duration-75"
           style={{
             left: `${Math.min(84, Math.max(16, (slotCenterX(hoveredIdx) / W) * 100))}%`,
             transform: 'translateX(-50%)',
           }}
         >
-          <div className="flex items-center justify-between gap-4 border-b border-slate-800 pb-1.5 text-[11px] font-bold text-slate-300">
+          <div className="flex items-center justify-between gap-4 border-b border-line pb-1.5 text-[11px] font-bold text-fg-secondary">
             <span>{bucketLabel(data.days[hoveredIdx], data.granularity, true)}</span>
-            <span className="text-[10px] uppercase tracking-wider text-indigo-400 font-semibold">{mode === 'gain' ? 'New gained' : 'Total'}</span>
+            <span className="text-[10px] uppercase tracking-wider text-accent font-semibold">{mode === 'gain' ? 'New gained' : 'Total'}</span>
           </div>
           <div className="space-y-1.5 pt-0.5">
             {data.series.map((s) => {
@@ -114,12 +114,12 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
               if (val === null) return null;
               return (
                 <div key={s.platform} className="flex items-center justify-between gap-4 text-[11px]">
-                  <span className="flex items-center gap-1.5 capitalize font-medium text-slate-300">
-                    <span className="h-2 w-2 rounded-full ring-1 ring-slate-700" style={{ backgroundColor: colorFor(s.platform) }} />
+                  <span className="flex items-center gap-1.5 capitalize font-medium text-fg-secondary">
+                    <span className="h-2 w-2 rounded-full ring-1 ring-line-strong" style={{ backgroundColor: colorFor(s.platform) }} />
                     {s.platform}
                   </span>
-                  <span className="font-bold text-white tabular-nums">
-                    {val.toLocaleString()} <span className="font-normal text-slate-400 text-[10px]">{metricLabel.toLowerCase()}</span>
+                  <span className="font-bold text-fg tabular-nums">
+                    {val.toLocaleString()} <span className="font-normal text-fg-muted text-[10px]">{metricLabel.toLowerCase()}</span>
                   </span>
                 </div>
               );
@@ -156,7 +156,7 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
               x2={W - M.right}
               y1={y(t)}
               y2={y(t)}
-              stroke="#1e293b"
+              stroke="var(--chart-grid)"
               strokeWidth={1}
               strokeDasharray={t === 0 ? undefined : '3 3'}
             />
@@ -165,7 +165,7 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
               y={y(t) + 4}
               textAnchor="end"
               fontSize={11}
-              fill="#94a3b8"
+              fill="var(--chart-axis)"
               className="font-medium select-none"
             >
               {t}
@@ -184,7 +184,7 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
               y={H - 12}
               textAnchor="middle"
               fontSize={11}
-              fill={hoveredIdx === i ? '#ffffff' : '#94a3b8'}
+              fill={hoveredIdx === i ? 'var(--fg)' : 'var(--chart-axis)'}
               className="font-medium select-none transition-colors"
             >
               {bucketLabel(day, data.granularity, crossesMidnight)}
@@ -210,7 +210,7 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
                   y={M.top - 6}
                   width={actualGroupW + 12}
                   height={plotH + 10}
-                  fill="#6366f1"
+                  fill="var(--primary)"
                   opacity={0.08}
                   rx={10}
                   className="pointer-events-none"
@@ -236,14 +236,14 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
                   >
                     <title>{`${s.platform}, ${bucketLabel(data.days[dayIdx], data.granularity)}: ${val}`}</title>
 
-                    {/* Subtle Dark Track Gauge */}
+                    {/* Subtle track behind each bar */}
                     <rect
                       x={barX}
                       y={M.top}
                       width={barW}
                       height={plotH}
                       rx={Math.min(4, barW / 2)}
-                      fill="#131b2e"
+                      fill="var(--surface-hover)"
                       opacity={0.35}
                       className="pointer-events-none"
                     />
@@ -254,7 +254,7 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
                         <path
                           d={roundedTopBar(barX, barY, barW, barH, 4)}
                           fill={`url(#bar-grad-${s.platform})`}
-                          stroke={isHighlighted || isDayHovered ? colorFor(s.platform) : 'rgba(255,255,255,0.08)'}
+                          stroke={isHighlighted || isDayHovered ? colorFor(s.platform) : 'var(--line)'}
                           strokeWidth={isHighlighted || isDayHovered ? 1.5 : 0.75}
                           className="transition-all duration-200"
                         />
@@ -280,7 +280,7 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
                         y={barY - 6}
                         textAnchor="middle"
                         fontSize={10}
-                        fill={isDayHovered || isHighlighted ? '#ffffff' : '#94a3b8'}
+                        fill={isDayHovered || isHighlighted ? 'var(--fg)' : 'var(--chart-axis)'}
                         className={`font-bold select-none tabular-nums transition-colors pointer-events-none ${isDayHovered || isHighlighted ? '' : 'max-sm:hidden'}`}
                       >
                         {val.toLocaleString()}
@@ -297,7 +297,7 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
       </div>
 
       {/* Interactive Platform Legend Pills */}
-      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-slate-300 font-medium">
+      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-fg-secondary font-medium">
         {data.series.map((s) => (
           <button
             key={s.platform}
@@ -312,14 +312,14 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
             }}
             className={`inline-flex items-center gap-1.5 capitalize rounded-full px-2.5 py-1 transition-all ${
               activePlatform === s.platform
-                ? 'bg-slate-800 text-white shadow-md ring-1 ring-slate-700'
+                ? 'bg-surface-hover text-fg shadow-md ring-1 ring-line-strong'
                 : activePlatform !== null
                 ? 'opacity-40'
-                : 'hover:text-white hover:bg-slate-800/60'
+                : 'hover:text-fg hover:bg-surface-hover/60'
             }`}
           >
             <span
-              className="inline-block h-2.5 w-2.5 rounded-full ring-2 ring-slate-800 shadow-sm transition-transform"
+              className="inline-block h-2.5 w-2.5 rounded-full ring-2 ring-line shadow-sm transition-transform"
               style={{
                 backgroundColor: colorFor(s.platform),
                 transform: activePlatform === s.platform ? 'scale(1.25)' : 'scale(1)',
@@ -330,7 +330,7 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
         ))}
       </div>
 
-      <p className="mt-3 text-xs text-slate-400">
+      <p className="mt-3 text-xs text-fg-muted">
         {mode === 'gain'
           ? <>Each bar shows the new {metricLabel.toLowerCase()} gained since tracking began, added up over all posts on that platform. Every bar starts at 0; {metricLabel.toLowerCase()} a post had before tracking are not counted.</>
           : <>Each bar shows the running total of {metricLabel.toLowerCase()} across all posts on that platform for each recorded interval.</>}

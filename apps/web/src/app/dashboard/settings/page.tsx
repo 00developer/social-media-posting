@@ -53,13 +53,13 @@ function TeamNameEditor({ team, userId, fetchUserTeams }: { team: Team; userId: 
         type="text"
         value={teamNameInput}
         onChange={e => setTeamNameInput(e.target.value)}
-        className="rounded-xl border border-slate-700 bg-slate-900/90 px-3.5 py-2 text-sm text-white placeholder-slate-500 flex-1 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+        className="rounded-xl border border-line-strong bg-surface-muted/90 px-3.5 py-2 text-sm text-fg placeholder:text-fg-subtle flex-1 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
       />
       <button
         type="submit"
         disabled={savingName || !teamNameInput.trim() || teamNameInput.trim() === team.name}
         aria-busy={savingName}
-        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-semibold text-white transition-all disabled:opacity-50"
+        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary hover:bg-primary-hover px-4 py-2 text-xs font-semibold text-white transition-all disabled:opacity-50"
       >
         {savingName && <Spinner />}
         {savingName ? 'Saving...' : 'Save'}
@@ -161,31 +161,31 @@ export default function SettingsPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-12">
       {/* Team Settings / Billing */}
-      <div className="rounded-2xl border border-slate-800 bg-[#0D131F] p-4 sm:p-6 shadow-sm">
+      <div className="rounded-xl border border-line bg-surface shadow-card p-4 sm:p-6">
         <div className="flex flex-wrap justify-between items-start gap-3 mb-6">
           <div>
-            <h2 className="text-xl font-bold text-white tracking-tight">Team Settings</h2>
-            <p className="text-sm text-slate-400 mt-1">Manage team preferences, members, and subscription.</p>
+            <h2 className="text-xl font-bold text-fg tracking-tight">Team Settings</h2>
+            <p className="text-sm text-fg-muted mt-1">Manage team preferences, members, and subscription.</p>
           </div>
-          <span className="text-xs font-semibold uppercase px-2.5 py-1 bg-indigo-950/60 border border-indigo-800/50 text-indigo-400 rounded-full">
+          <span className="text-xs font-semibold uppercase px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/50 text-accent rounded-full">
             {planLabel}
           </span>
         </div>
 
         <div className="mb-8">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Team Name</h3>
+          <h3 className="text-xs font-bold text-fg-muted uppercase tracking-wider mb-3">Team Name</h3>
           {activeTeam?.role === 'owner' && user ? (
             <TeamNameEditor key={activeTeam.id} team={activeTeam} userId={user.id} fetchUserTeams={fetchUserTeams} />
           ) : (
-            <p className="text-sm text-slate-400">Only the team owner can rename this team.</p>
+            <p className="text-sm text-fg-muted">Only the team owner can rename this team.</p>
           )}
         </div>
 
-        <hr className="my-6 border-slate-800/80" />
+        <hr className="my-6 border-line" />
 
         {['owner', 'admin'].includes(activeTeam?.role as string) ? (
           <div className="mb-8">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Invite Member</h3>
+            <h3 className="text-xs font-bold text-fg-muted uppercase tracking-wider mb-3">Invite Member</h3>
             <form className="flex flex-col sm:flex-row gap-2.5" noValidate onSubmit={(e) => { e.preventDefault(); void handleInvite(); }}>
               <label htmlFor="invite-email" className="sr-only">Email address</label>
               <input
@@ -198,7 +198,7 @@ export default function SettingsPage() {
                 disabled={inviting}
                 aria-invalid={!!inviteError}
                 aria-describedby={inviteError ? 'invite-error' : undefined}
-                className={`min-w-0 rounded-xl border bg-slate-900/90 px-3.5 py-2 text-sm text-white placeholder-slate-500 flex-1 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${inviteError ? 'border-rose-500/70' : 'border-slate-700'}`}
+                className={`min-w-0 rounded-xl border bg-surface-muted/90 px-3.5 py-2 text-sm text-fg placeholder:text-fg-subtle flex-1 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${inviteError ? 'border-rose-500/70' : 'border-line-strong'}`}
               />
               <label htmlFor="invite-role" className="sr-only">Role</label>
               <select
@@ -206,7 +206,7 @@ export default function SettingsPage() {
                 value={inviteRole}
                 onChange={e => setInviteRole(e.target.value)}
                 disabled={inviting}
-                className="rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-sm font-medium text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                className="rounded-xl border border-line-strong bg-surface-muted px-3.5 py-2 text-sm font-medium text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               >
                 <option value="admin">Admin</option>
                 <option value="editor">Editor</option>
@@ -216,24 +216,24 @@ export default function SettingsPage() {
                 type="submit"
                 disabled={inviting || !inviteEmail.trim()}
                 aria-busy={inviting}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-semibold text-white transition-all disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary hover:bg-primary-hover px-4 py-2 text-xs font-semibold text-white transition-all disabled:opacity-50"
               >
                 {inviting && <Spinner />}
                 {inviting ? 'Inviting...' : 'Invite'}
               </button>
             </form>
-            {inviteError && <p id="invite-error" role="alert" className="mt-2 text-xs font-medium text-rose-400">{inviteError}</p>}
+            {inviteError && <p id="invite-error" role="alert" className="mt-2 text-xs font-medium text-rose-700 dark:text-rose-400">{inviteError}</p>}
           </div>
         ) : (
-          <p className="text-sm text-slate-400 mb-6">You do not have permission to invite new members to this team.</p>
+          <p className="text-sm text-fg-muted mb-6">You do not have permission to invite new members to this team.</p>
         )}
 
-        <hr className="my-6 border-slate-800/80" />
+        <hr className="my-6 border-line" />
 
         {activeTeam?.role === 'owner' ? (
           <div className="mb-8">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Billing</h3>
-            <p className="text-sm text-slate-400 mb-4">Manage your team&apos;s subscription plan.</p>
+            <h3 className="text-xs font-bold text-fg-muted uppercase tracking-wider mb-3">Billing</h3>
+            <p className="text-sm text-fg-muted mb-4">Manage your team&apos;s subscription plan.</p>
             {(activeTeam?.plan || 'free') === 'free' ? (
               <button
                 type="button"
@@ -251,7 +251,7 @@ export default function SettingsPage() {
                 onClick={() => handleBilling('free')}
                 disabled={billingBusy}
                 aria-busy={billingBusy}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-6 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-700 transition-all disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line-strong bg-surface-hover px-6 py-2.5 text-xs font-bold text-fg hover:bg-surface-strong transition-all disabled:opacity-50"
               >
                 {billingBusy && <Spinner />}
                 {billingBusy ? 'Updating...' : 'Downgrade to Free Plan'}
@@ -260,22 +260,22 @@ export default function SettingsPage() {
           </div>
         ) : (
           <div className="mb-8">
-             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Billing</h3>
-             <p className="text-sm text-slate-400">Only the team owner can manage billing settings.</p>
+             <h3 className="text-xs font-bold text-fg-muted uppercase tracking-wider mb-3">Billing</h3>
+             <p className="text-sm text-fg-muted">Only the team owner can manage billing settings.</p>
           </div>
         )}
 
-        <hr className="my-6 border-slate-800/80" />
+        <hr className="my-6 border-line" />
 
         <div>
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">AI Assistant</h3>
+          <h3 className="text-xs font-bold text-fg-muted uppercase tracking-wider mb-3">AI Assistant</h3>
           {activeTeam?.role === 'owner' ? (
-            <div className="flex items-start justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4.5 backdrop-blur-md">
+            <div className="flex items-start justify-between gap-4 rounded-2xl border border-line bg-surface-muted/60 p-4.5 backdrop-blur-md">
               <div>
-                <p className="text-sm font-bold text-white">Auto-send AI replies</p>
-                <p className="mt-1 text-xs text-slate-400 leading-relaxed">
+                <p className="text-sm font-bold text-fg">Auto-send AI replies</p>
+                <p className="mt-1 text-xs text-fg-muted leading-relaxed">
                   When on, comments the AI is confident about (not spam, not a complaint) are replied to automatically instead of only suggested.
-                  Negative or spam comments are <span className="font-semibold text-rose-400">never</span> auto-replied to, and this never overrides that.
+                  Negative or spam comments are <span className="font-semibold text-rose-700 dark:text-rose-400">never</span> auto-replied to, and this never overrides that.
                   Off by default - review suggestions yourself on the Comments page until you trust it.
                 </p>
               </div>
@@ -286,13 +286,13 @@ export default function SettingsPage() {
                 aria-checked={!!activeTeam?.ai_auto_reply_enabled}
                 onClick={() => handleToggleAutoReply(!activeTeam?.ai_auto_reply_enabled)}
                 disabled={savingAutoReply}
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${activeTeam?.ai_auto_reply_enabled ? 'bg-indigo-600 shadow-md shadow-indigo-500/40' : 'bg-slate-800 border border-slate-700'}`}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${activeTeam?.ai_auto_reply_enabled ? 'bg-primary shadow-md shadow-indigo-500/40' : 'bg-surface-hover border border-line-strong'}`}
               >
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${activeTeam?.ai_auto_reply_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
           ) : (
-            <p className="text-sm text-slate-400">Only the team owner can change the AI auto-reply setting.</p>
+            <p className="text-sm text-fg-muted">Only the team owner can change the AI auto-reply setting.</p>
           )}
         </div>
       </div>

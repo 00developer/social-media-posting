@@ -27,14 +27,14 @@ export function ConfirmDialog({ open, options, onResolve }: { open: boolean; opt
           <button
             type="button"
             onClick={() => onResolve(false)}
-            className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            className="rounded-xl border border-line-strong bg-surface-muted px-4 py-2 text-xs font-semibold text-fg-secondary hover:bg-surface-hover hover:text-fg transition-colors"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
             onClick={() => onResolve(true)}
-            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white transition-colors ${destructive ? 'bg-rose-600 hover:bg-rose-500' : 'bg-indigo-600 hover:bg-indigo-500'}`}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white transition-colors ${destructive ? 'bg-rose-600 hover:bg-rose-500' : 'bg-primary hover:bg-primary-hover'}`}
           >
             {confirmLabel}
           </button>

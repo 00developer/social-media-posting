@@ -301,7 +301,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
     { id: 'youtube', label: 'YouTube', activeClass: 'bg-red-600 text-white border-red-600 shadow-xs' },
     { id: 'instagram', label: 'Instagram', activeClass: 'bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white border-transparent shadow-xs' },
     { id: 'facebook', label: 'Facebook', activeClass: 'bg-blue-600 text-white border-blue-600 shadow-xs' },
-    { id: 'threads', label: 'Threads', activeClass: 'bg-slate-100 text-slate-950 border-slate-100 shadow-xs' },
+    { id: 'threads', label: 'Threads', activeClass: 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-950 dark:border-slate-100 shadow-xs' },
     { id: 'twitter', label: 'Twitter', activeClass: 'bg-sky-500 text-white border-sky-500 shadow-xs' },
     { id: 'linkedin', label: 'LinkedIn', activeClass: 'bg-blue-700 text-white border-blue-700 shadow-xs' },
     { id: 'tiktok', label: 'TikTok', activeClass: 'bg-gradient-to-r from-cyan-500 to-pink-500 text-white border-transparent shadow-xs' },
@@ -309,17 +309,17 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
   ];
 
   return (
-    <div className={variant === 'modal' ? 'bg-[#0d131f] text-slate-100' : 'bg-[#0d131f] p-5 rounded-2xl border border-slate-800 sticky top-20 text-slate-100 shadow-xs'}>
+    <div className={variant === 'modal' ? 'bg-surface text-fg' : 'bg-surface p-5 rounded-2xl border border-line sticky top-20 text-fg shadow-xs'}>
       {/* Header */}
       <div className={`flex items-center justify-between gap-2 mb-4 ${variant === 'modal' ? 'pr-10' : ''}`}>
-        <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
+        <h2 className="text-sm font-semibold text-fg flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-indigo-500/10 text-accent flex items-center justify-center border border-indigo-500/20">
             <PenSquare className="w-3.5 h-3.5" />
           </div>
           <span>Compose Post</span>
         </h2>
         {newPostContent.length > 0 && (
-          <span className="text-[11px] font-medium text-slate-400 bg-slate-900 px-2 py-0.5 rounded-md border border-slate-800">
+          <span className="text-[11px] font-medium text-fg-muted bg-surface-muted px-2 py-0.5 rounded-md border border-line">
             {newPostContent.length} chars
           </span>
         )}
@@ -327,10 +327,10 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
 
       {/* AI Assistant Section */}
       {activeTeam?.role !== 'viewer' && (
-        <div className="mb-4 rounded-xl border border-slate-800 bg-slate-900/50 p-3.5">
+        <div className="mb-4 rounded-xl border border-line bg-surface-muted/50 p-3.5">
           <div className="flex items-center justify-between mb-2">
-            <label htmlFor={`${fieldId}-ai-prompt`} className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <label htmlFor={`${fieldId}-ai-prompt`} className="flex items-center gap-1.5 text-xs font-medium text-fg">
+              <Sparkles className="w-3.5 h-3.5 text-accent" />
               <span>AI Caption Assistant</span>
             </label>
           </div>
@@ -343,13 +343,13 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
               onChange={(e) => setAiPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !aiLoading) { e.preventDefault(); generateWithAi(); } }}
               placeholder="e.g. weekend sale on handmade craft items..."
-              className="w-full rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-xs text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-all placeholder:text-slate-500 shadow-inner"
+              className="w-full rounded-xl border border-line bg-surface-muted/90 px-3.5 py-2 text-xs text-fg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-all placeholder:text-fg-subtle shadow-inner"
             />
             <button
               type="button"
               onClick={generateWithAi}
               disabled={aiLoading || !aiPrompt.trim()}
-              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5"
+              className="w-full rounded-xl bg-primary hover:bg-primary-hover px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5"
             >
               {aiImageUploading ? (
                 <>
@@ -370,25 +370,25 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
             </button>
           </div>
           {mediaFile && (
-            <p className="mt-2 text-[11px] text-indigo-400 font-medium">
+            <p className="mt-2 text-[11px] text-accent font-medium">
               💡 Attached {mediaFile.type.startsWith('video/') ? 'video frame' : 'photo'} will be analyzed for visual context.
             </p>
           )}
-          {aiError && <p className="mt-2 text-xs text-rose-400 font-medium">{aiError}</p>}
+          {aiError && <p className="mt-2 text-xs text-rose-700 dark:text-rose-400 font-medium">{aiError}</p>}
           {aiResult && (
-            <div className="mt-3 space-y-2 pt-2 border-t border-indigo-900/60">
+            <div className="mt-3 space-y-2 pt-2 border-t border-indigo-200 dark:border-indigo-900/60">
               <div className="flex gap-1.5">
                 <button
                   type="button"
                   onClick={() => applyAiVersion('caption')}
-                  className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300 border border-slate-800 hover:bg-slate-800 hover:text-white transition-all"
+                  className="rounded-full bg-surface-muted px-2.5 py-1 text-[11px] font-semibold text-fg-secondary border border-line hover:bg-surface-hover hover:text-fg transition-all"
                 >
                   Short caption
                 </button>
                 <button
                   type="button"
                   onClick={() => applyAiVersion('paragraph')}
-                  className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300 border border-slate-800 hover:bg-slate-800 hover:text-white transition-all"
+                  className="rounded-full bg-surface-muted px-2.5 py-1 text-[11px] font-semibold text-fg-secondary border border-line hover:bg-surface-hover hover:text-fg transition-all"
                 >
                   Long paragraph
                 </button>
@@ -399,15 +399,15 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                 value={aiDraft}
                 onChange={(e) => setAiDraft(e.target.value)}
                 rows={3}
-                className="w-full rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none shadow-inner resize-none"
+                className="w-full rounded-xl border border-line bg-surface-muted p-3 text-xs text-fg focus:border-indigo-500 focus:outline-none shadow-inner resize-none"
               />
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] text-slate-400">Review above before inserting.</p>
+                <p className="text-[10px] text-fg-muted">Review above before inserting.</p>
                 <button
                   type="button"
                   onClick={insertAiDraft}
                   disabled={!aiDraft.trim()}
-                  className="shrink-0 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 shadow-xs transition-colors disabled:opacity-50"
+                  className="shrink-0 rounded-xl bg-primary px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors disabled:opacity-50"
                 >
                   Use in Post
                 </button>
@@ -422,7 +422,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
         <label htmlFor={`${fieldId}-content`} className="sr-only">Post content</label>
         <textarea
           id={`${fieldId}-content`}
-          className="w-full border border-slate-800 rounded-2xl p-4 text-sm text-slate-100 bg-slate-900/90 hover:bg-slate-900 focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none resize-none placeholder-slate-500 shadow-inner leading-relaxed"
+          className="w-full border border-line rounded-2xl p-4 text-sm text-fg bg-surface-muted/90 hover:bg-surface-hover focus:bg-surface-hover focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none resize-none placeholder:text-fg-subtle shadow-inner leading-relaxed"
           rows={5}
           placeholder="What's happening? Share updates, announcements, or attach media..."
           value={newPostContent}
@@ -433,20 +433,20 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
         {/* Quick Tag Suggestions & Character Count */}
         <div className="flex items-center justify-between mt-2 gap-2">
           <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-0.5">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0">Tags:</span>
+            <span className="text-[10px] font-bold text-fg-subtle uppercase tracking-wider shrink-0">Tags:</span>
             {['#trending', '#update', '#announcement', '#viral', '#creative'].map(tag => (
               <button
                 key={tag}
                 type="button"
                 onClick={() => setNewPostContent(prev => prev ? `${prev} ${tag}` : tag)}
                 disabled={activeTeam?.role === 'viewer'}
-                className="px-2 py-0.5 rounded-lg bg-slate-800/80 hover:bg-indigo-950 hover:text-indigo-300 text-slate-300 text-[11px] font-medium transition-colors shrink-0 border border-transparent hover:border-indigo-800/60"
+                className="px-2 py-0.5 rounded-lg bg-surface-hover/80 hover:bg-indigo-50 dark:hover:bg-indigo-950 hover:text-accent-hover text-fg-secondary text-[11px] font-medium transition-colors shrink-0 border border-transparent hover:border-indigo-200 dark:hover:border-indigo-800/60"
               >
                 {tag}
               </button>
             ))}
           </div>
-          <span className={`text-[11px] font-semibold shrink-0 ${newPostContent.length > 280 ? 'text-amber-400' : 'text-slate-400'}`}>
+          <span className={`text-[11px] font-semibold shrink-0 ${newPostContent.length > 280 ? 'text-amber-700 dark:text-amber-400' : 'text-fg-muted'}`}>
             {newPostContent.length}/2200
           </span>
         </div>
@@ -454,16 +454,16 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
 
       {/* Content Type Selector (Segmented Pills) */}
       <div className="mb-5">
-        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Content Type</label>
-        <div className="flex bg-slate-900/80 p-1 rounded-xl gap-1 border border-slate-800">
+        <label className="block text-[11px] font-bold text-fg-muted uppercase tracking-wider mb-2">Content Type</label>
+        <div className="flex bg-surface-muted/80 p-1 rounded-xl gap-1 border border-line">
           <button
             type="button"
             onClick={() => setContentType('post')}
             disabled={activeTeam?.role === 'viewer'}
             className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
               contentType === 'post'
-                ? 'bg-slate-800 text-white font-semibold'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-surface-hover text-fg font-semibold'
+                : 'text-fg-muted hover:text-fg'
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
@@ -475,8 +475,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
             disabled={activeTeam?.role === 'viewer'}
             className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
               contentType === 'reel'
-                ? 'bg-slate-800 text-white font-semibold'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-surface-hover text-fg font-semibold'
+                : 'text-fg-muted hover:text-fg'
             }`}
           >
             <Film className="w-3.5 h-3.5" />
@@ -488,8 +488,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
       {/* Target Platforms */}
       <div className="mb-5">
         <div className="flex items-center justify-between mb-2">
-          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Target Channels</label>
-          <span className="text-[10px] text-slate-400 font-semibold">{selectedPlatforms.length} selected</span>
+          <label className="block text-[11px] font-bold text-fg-muted uppercase tracking-wider">Target Channels</label>
+          <span className="text-[10px] text-fg-muted font-semibold">{selectedPlatforms.length} selected</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {PLATFORMS_DATA.map(p => {
@@ -506,8 +506,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                 aria-pressed={isSelected}
                 className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all flex items-center gap-1.5 ${
                   isSelected
-                    ? `${p.activeClass} ring-2 ring-indigo-400/50 ring-offset-1 ring-offset-[#0d131f]`
-                    : 'bg-slate-900/80 text-slate-300 border-slate-800 hover:bg-slate-800 hover:border-slate-700 shadow-2xs'
+                    ? `${p.activeClass} ring-2 ring-indigo-400/50 ring-offset-1 ring-offset-surface`
+                    : 'bg-surface-muted/80 text-fg-secondary border-line hover:bg-surface-hover hover:border-line-strong shadow-2xs'
                 }`}
               >
                 {isSelected && <Check className="w-3 h-3 stroke-3" />}
@@ -522,12 +522,12 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
       <div className="mb-5 space-y-4">
         <div>
           <div className="flex justify-between items-center mb-2">
-            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Attachment</label>
+            <label className="block text-[11px] font-bold text-fg-muted uppercase tracking-wider">Attachment</label>
             {mediaFile && (
               <button
                 type="button"
                 onClick={() => { clearMedia(); setMediaError(null); }}
-                className="text-[10px] text-rose-400 font-bold hover:text-rose-300 hover:bg-rose-950/40 px-2 py-0.5 rounded-md transition-colors uppercase tracking-wider flex items-center gap-1"
+                className="text-[10px] text-rose-700 dark:text-rose-400 font-bold hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2 py-0.5 rounded-md transition-colors uppercase tracking-wider flex items-center gap-1"
               >
                 <Trash2 className="w-3 h-3" />
                 Remove
@@ -536,12 +536,12 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
           </div>
 
           {!mediaFile ? (
-            <label className="border-2 border-dashed border-slate-800 hover:border-indigo-500/60 focus-within:border-indigo-500/60 rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-indigo-950/20 transition-all group bg-slate-900/40">
-              <div className="w-9 h-9 rounded-xl bg-slate-800 group-hover:bg-indigo-950 text-slate-400 group-hover:text-indigo-400 flex items-center justify-center mb-1.5 transition-colors border border-slate-700/60">
+            <label className="border-2 border-dashed border-line hover:border-indigo-500/60 focus-within:border-indigo-500/60 rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/20 transition-all group bg-surface-muted/40">
+              <div className="w-9 h-9 rounded-xl bg-surface-hover group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950 text-fg-muted group-hover:text-accent flex items-center justify-center mb-1.5 transition-colors border border-line-strong">
                 <UploadCloud className="w-5 h-5" />
               </div>
-              <span className="text-xs font-semibold text-slate-200">Upload video or photo</span>
-              <span className="text-[10px] text-slate-400 mt-0.5">MP4, WEBM, PNG, JPEG up to 100MB</span>
+              <span className="text-xs font-semibold text-fg">Upload video or photo</span>
+              <span className="text-[10px] text-fg-muted mt-0.5">MP4, WEBM, PNG, JPEG up to 100MB</span>
               <input
                 key={fileInputKey}
                 type="file"
@@ -553,34 +553,34 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
               />
             </label>
           ) : (
-            <div className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800 flex items-center justify-between">
+            <div className="p-3 bg-surface-muted/90 rounded-2xl border border-line flex items-center justify-between">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-indigo-950 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-800/60">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-accent flex items-center justify-center shrink-0 border border-indigo-200 dark:border-indigo-800/60">
                   {mediaFile.type.startsWith('video/') ? <Video className="w-4 h-4" /> : <UploadCloud className="w-4 h-4" />}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-slate-200 truncate">{mediaFile.name}</p>
-                  <p className="text-[10px] text-slate-400">{(mediaFile.size / (1024 * 1024)).toFixed(2)} MB</p>
+                  <p className="text-xs font-semibold text-fg truncate">{mediaFile.name}</p>
+                  <p className="text-[10px] text-fg-muted">{(mediaFile.size / (1024 * 1024)).toFixed(2)} MB</p>
                 </div>
               </div>
             </div>
           )}
 
-          {mediaError && <p role="alert" className="mt-2 text-xs font-medium text-rose-400">{mediaError}</p>}
+          {mediaError && <p role="alert" className="mt-2 text-xs font-medium text-rose-700 dark:text-rose-400">{mediaError}</p>}
 
           {isPreviewLoading && (
-            <div className="flex items-center gap-2 text-xs text-indigo-400 font-semibold mt-2">
+            <div className="flex items-center gap-2 text-xs text-accent font-semibold mt-2">
               <RotateCw className="w-3.5 h-3.5 animate-spin" />
               Generating preview transcode...
             </div>
           )}
 
           {(mediaPreview || newPostContent) && (
-            <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-900 mt-3 flex flex-col shadow-2xl">
+            <div className="border border-line rounded-2xl overflow-hidden bg-surface-muted mt-3 flex flex-col shadow-card">
               {selectedPlatforms.length > 0 ? (
                 <>
-                  <div className="flex items-center gap-1.5 p-2.5 border-b border-slate-800 bg-[#0e1322] overflow-x-auto shrink-0 custom-scrollbar">
-                    <span className="text-[11px] font-bold text-slate-400 mr-1">Preview:</span>
+                  <div className="flex items-center gap-1.5 p-2.5 border-b border-line bg-surface overflow-x-auto shrink-0 custom-scrollbar">
+                    <span className="text-[11px] font-bold text-fg-muted mr-1">Preview:</span>
                     {selectedPlatforms.map(p => (
                       <button
                         key={p}
@@ -589,8 +589,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                         onClick={() => setPreviewPlatform(p)}
                         className={`text-[10px] px-2.5 py-1 rounded-lg font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
                           activePreviewPlatform === p
-                            ? 'bg-indigo-950 text-indigo-300 border border-indigo-800/80 shadow-[0_0_8px_rgba(99,102,241,0.25)]'
-                            : 'bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                            ? 'bg-indigo-50 dark:bg-indigo-950 text-accent border border-indigo-200 dark:border-indigo-800/80 shadow-[0_0_8px_rgba(99,102,241,0.25)]'
+                            : 'bg-surface-muted text-fg-muted hover:bg-surface-hover hover:text-fg'
                         }`}
                       >
                         {p}
@@ -598,14 +598,14 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                     ))}
                   </div>
 
-                  <div className={variant === 'modal' ? 'bg-[#090d16] p-4 flex items-start justify-center' : 'flex-1 overflow-y-auto max-h-128 bg-[#090d16] p-4 flex items-start justify-center custom-scrollbar'}>
+                  <div className={variant === 'modal' ? 'bg-canvas p-4 flex items-start justify-center' : 'flex-1 overflow-y-auto max-h-128 bg-canvas p-4 flex items-start justify-center custom-scrollbar'}>
                     <PlatformPreviewCard platform={activePreviewPlatform} content={newPostContent} mediaUrl={mediaPreview} isVideo={mediaFile?.type.startsWith('video/')} contentType={contentType} />
                   </div>
                 </>
               ) : (
-                <div className="p-6 text-center bg-slate-900/60">
-                  <p className="text-xs text-slate-300 font-semibold mb-0.5">Select a channel above</p>
-                  <p className="text-[11px] text-slate-500">Channel preview will appear automatically</p>
+                <div className="p-6 text-center bg-surface-muted/60">
+                  <p className="text-xs text-fg-secondary font-semibold mb-0.5">Select a channel above</p>
+                  <p className="text-[11px] text-fg-subtle">Channel preview will appear automatically</p>
                 </div>
               )}
             </div>
@@ -614,14 +614,14 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
 
         {/* Schedule Field */}
         <div>
-          <label htmlFor={`${fieldId}-schedule`} className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+          <label htmlFor={`${fieldId}-schedule`} className="text-[11px] font-bold text-fg-muted uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Calendar className="w-3.5 h-3.5 text-fg-muted" />
             Schedule (Optional)
           </label>
           <input
             id={`${fieldId}-schedule`}
             type="datetime-local"
-            className={`w-full border rounded-xl px-3.5 py-2 text-xs text-slate-200 bg-slate-900/90 hover:bg-slate-900 focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none shadow-inner [color-scheme:dark] ${scheduleError ? 'border-rose-500/70' : 'border-slate-800'}`}
+            className={`w-full border rounded-xl px-3.5 py-2 text-xs text-fg bg-surface-muted/90 hover:bg-surface-hover focus:bg-surface-hover focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none shadow-inner [color-scheme:dark] ${scheduleError ? 'border-rose-500/70' : 'border-line'}`}
             value={scheduleAt}
             min={minScheduleAt}
             disabled={activeTeam?.role === 'viewer'}
@@ -634,12 +634,12 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
             }}
           />
           {scheduleError && (
-            <p id={`${fieldId}-schedule-error`} role="alert" className="mt-1.5 text-xs font-medium text-rose-400">{scheduleError}</p>
+            <p id={`${fieldId}-schedule-error`} role="alert" className="mt-1.5 text-xs font-medium text-rose-700 dark:text-rose-400">{scheduleError}</p>
           )}
         </div>
       </div>
 
-      {formError && <p role="alert" className="mb-2 text-xs font-medium text-rose-400">{formError}</p>}
+      {formError && <p role="alert" className="mb-2 text-xs font-medium text-rose-700 dark:text-rose-400">{formError}</p>}
 
       {/* Action Buttons */}
       <div className="flex gap-2.5 mt-2">
@@ -649,7 +649,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
             onClick={() => handleCreatePost('schedule')}
             disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null || !!scheduleError || !!mediaError}
             aria-busy={optimisticPost !== null}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-semibold text-xs shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+            className="w-full bg-primary hover:bg-primary-hover text-white py-2.5 rounded-xl font-semibold text-xs shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
           >
             {optimisticPost ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />}
             <span>{optimisticPost ? 'Scheduling...' : 'Schedule Post'}</span>
@@ -661,7 +661,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
               onClick={() => handleCreatePost('publish')}
               disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null || !!mediaError}
               aria-busy={optimisticPost !== null}
-              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-semibold text-xs shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+              className="flex-1 bg-primary hover:bg-primary-hover text-white py-2.5 rounded-xl font-semibold text-xs shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
             >
               {submittingAction === 'publish' ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
               <span>{submittingAction === 'publish' ? 'Publishing...' : 'Publish Now'}</span>
@@ -670,9 +670,9 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
               type="button"
               onClick={() => handleCreatePost('draft')}
               disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null || !!mediaError}
-              className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 py-2.5 rounded-xl font-semibold text-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5 shadow-xs"
+              className="flex-1 bg-surface-hover hover:bg-surface-strong text-fg border border-line-strong py-2.5 rounded-xl font-semibold text-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5 shadow-xs"
             >
-              {submittingAction === 'draft' ? <RotateCw className="w-3.5 h-3.5 animate-spin text-slate-400" /> : <Bookmark className="w-3.5 h-3.5 text-slate-400" />}
+              {submittingAction === 'draft' ? <RotateCw className="w-3.5 h-3.5 animate-spin text-fg-muted" /> : <Bookmark className="w-3.5 h-3.5 text-fg-muted" />}
               <span>{submittingAction === 'draft' ? 'Saving...' : 'Save Draft'}</span>
             </button>
           </>

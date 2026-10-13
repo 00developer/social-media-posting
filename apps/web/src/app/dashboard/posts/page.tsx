@@ -191,17 +191,17 @@ export default function PostsPage() {
             onClick={() => handleFilterChange('all')}
             className={`p-3.5 rounded-xl border text-left cursor-pointer transition-colors ${
               statusFilter === 'all'
-                ? 'bg-slate-800 text-white border-slate-700'
-                : 'bg-[#0d131f] hover:bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-200'
+                ? 'bg-surface-hover text-fg border-line-strong'
+                : 'bg-surface hover:bg-surface-hover border-line hover:border-line-strong text-fg'
             }`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className={`text-[10px] font-medium uppercase tracking-wider ${statusFilter === 'all' ? 'text-slate-200' : 'text-slate-400'}`}>
+              <span className={`text-[10px] font-medium uppercase tracking-wider ${statusFilter === 'all' ? 'text-fg' : 'text-fg-muted'}`}>
                 All Posts
               </span>
-              <FileText className={`w-3.5 h-3.5 ${statusFilter === 'all' ? 'text-slate-200' : 'text-slate-400'}`} />
+              <FileText className={`w-3.5 h-3.5 ${statusFilter === 'all' ? 'text-fg' : 'text-fg-muted'}`} />
             </div>
-            <p className="text-xl font-bold tracking-tight text-white">{totalCount}</p>
+            <p className="text-xl font-bold tracking-tight text-fg">{totalCount}</p>
           </button>
 
           <button
@@ -209,17 +209,17 @@ export default function PostsPage() {
             onClick={() => handleFilterChange('published')}
             className={`p-3.5 rounded-xl border text-left cursor-pointer transition-colors ${
               statusFilter === 'published'
-                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-                : 'bg-[#0d131f] hover:bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-200'
+                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                : 'bg-surface hover:bg-surface-hover border-line hover:border-line-strong text-fg'
             }`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className={`text-[10px] font-medium uppercase tracking-wider ${statusFilter === 'published' ? 'text-emerald-300' : 'text-emerald-400'}`}>
+              <span className={`text-[10px] font-medium uppercase tracking-wider ${statusFilter === 'published' ? 'text-emerald-700 dark:text-emerald-300' : 'text-emerald-700 dark:text-emerald-400'}`}>
                 Published
               </span>
-              <CheckCircle2 className={`w-3.5 h-3.5 ${statusFilter === 'published' ? 'text-emerald-300' : 'text-emerald-400'}`} />
+              <CheckCircle2 className={`w-3.5 h-3.5 ${statusFilter === 'published' ? 'text-emerald-700 dark:text-emerald-300' : 'text-emerald-700 dark:text-emerald-400'}`} />
             </div>
-            <p className="text-xl font-bold tracking-tight text-white">{publishedCount}</p>
+            <p className="text-xl font-bold tracking-tight text-fg">{publishedCount}</p>
           </button>
 
           <button
@@ -227,17 +227,17 @@ export default function PostsPage() {
             onClick={() => handleFilterChange('scheduled')}
             className={`p-3.5 rounded-xl border text-left cursor-pointer transition-colors ${
               statusFilter === 'scheduled'
-                ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
-                : 'bg-[#0d131f] hover:bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-200'
+                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                : 'bg-surface hover:bg-surface-hover border-line hover:border-line-strong text-fg'
             }`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className={`text-[10px] font-medium uppercase tracking-wider ${statusFilter === 'scheduled' ? 'text-amber-300' : 'text-amber-400'}`}>
+              <span className={`text-[10px] font-medium uppercase tracking-wider ${statusFilter === 'scheduled' ? 'text-amber-700 dark:text-amber-300' : 'text-amber-700 dark:text-amber-400'}`}>
                 Scheduled
               </span>
-              <Clock className={`w-3.5 h-3.5 ${statusFilter === 'scheduled' ? 'text-amber-300' : 'text-amber-400'}`} />
+              <Clock className={`w-3.5 h-3.5 ${statusFilter === 'scheduled' ? 'text-amber-700 dark:text-amber-300' : 'text-amber-700 dark:text-amber-400'}`} />
             </div>
-            <p className="text-xl font-bold tracking-tight text-white">{scheduledCount}</p>
+            <p className="text-xl font-bold tracking-tight text-fg">{scheduledCount}</p>
           </button>
 
           <button
@@ -245,25 +245,25 @@ export default function PostsPage() {
             onClick={() => handleFilterChange('failed')}
             className={`p-3.5 rounded-xl border text-left cursor-pointer transition-colors ${
               statusFilter === 'failed'
-                ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
-                : 'bg-[#0d131f] hover:bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-200'
+                ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                : 'bg-surface hover:bg-surface-hover border-line hover:border-line-strong text-fg'
             }`}
           >
             <div className="flex items-center justify-between mb-1">
-              <span className={`text-[10px] font-medium uppercase tracking-wider ${statusFilter === 'failed' ? 'text-rose-300' : 'text-rose-400'}`}>
+              <span className={`text-[10px] font-medium uppercase tracking-wider ${statusFilter === 'failed' ? 'text-rose-700 dark:text-rose-300' : 'text-rose-700 dark:text-rose-400'}`}>
                 Issues
               </span>
-              <AlertCircle className={`w-3.5 h-3.5 ${statusFilter === 'failed' ? 'text-rose-300' : 'text-rose-400'}`} />
+              <AlertCircle className={`w-3.5 h-3.5 ${statusFilter === 'failed' ? 'text-rose-700 dark:text-rose-300' : 'text-rose-700 dark:text-rose-400'}`} />
             </div>
-            <p className="text-xl font-bold tracking-tight text-white">{failedCount}</p>
+            <p className="text-xl font-bold tracking-tight text-fg">{failedCount}</p>
           </button>
         </div>
 
         {/* Timeline Header Bar */}
-        <div className="bg-[#0d131f] rounded-xl border border-slate-800 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="bg-surface rounded-xl border border-line p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <h2 className="text-xs font-semibold text-white tracking-tight">Posts Timeline</h2>
-            <span className="text-[10px] font-medium text-slate-400 bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700/60">
+            <h2 className="text-xs font-semibold text-fg tracking-tight">Posts Timeline</h2>
+            <span className="text-[10px] font-medium text-fg-muted bg-surface-hover px-2 py-0.5 rounded-md border border-line-strong">
               {displayedPosts.length} of {filteredPosts.length} posts
             </span>
           </div>
@@ -277,8 +277,8 @@ export default function PostsPage() {
                 onClick={() => handleFilterChange(tab)}
                 className={`px-2.5 py-1 rounded-lg capitalize transition-colors whitespace-nowrap text-xs ${
                   statusFilter === tab
-                    ? 'bg-slate-800 text-white font-medium'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+                    ? 'bg-surface-hover text-fg font-medium'
+                    : 'text-fg-muted hover:text-fg hover:bg-surface-hover/40'
                 }`}
               >
                 {tab === 'failed' ? 'issues' : tab}
@@ -290,29 +290,29 @@ export default function PostsPage() {
         {!dataLoaded && !optimisticPost ? (
           <div className="space-y-4" aria-busy="true" aria-label="Loading posts">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="rounded-2xl border border-slate-800/80 border-l-4 border-l-slate-700 bg-[#0e1322]/90 p-5 animate-pulse">
+              <div key={i} className="rounded-2xl border border-line border-l-4 border-l-slate-700 bg-surface p-5 animate-pulse">
                 <div className="flex items-center gap-2 mb-4">
-                  <div className="h-5 w-20 rounded-full bg-slate-800" />
-                  <div className="h-3 w-24 rounded bg-slate-800/70" />
+                  <div className="h-5 w-20 rounded-full bg-surface-hover" />
+                  <div className="h-3 w-24 rounded bg-surface-hover/70" />
                 </div>
                 <div className="space-y-2">
-                  <div className="h-3 w-full rounded bg-slate-800/80" />
-                  <div className="h-3 w-5/6 rounded bg-slate-800/80" />
-                  <div className="h-3 w-2/3 rounded bg-slate-800/60" />
+                  <div className="h-3 w-full rounded bg-surface-hover/80" />
+                  <div className="h-3 w-5/6 rounded bg-surface-hover/80" />
+                  <div className="h-3 w-2/3 rounded bg-surface-hover/60" />
                 </div>
               </div>
             ))}
             <span className="sr-only">Loading posts...</span>
           </div>
         ) : filteredPosts.length === 0 ? (
-          <div className="bg-[#0e1322]/90 backdrop-blur-2xl rounded-3xl border border-slate-800/80 p-14 text-center shadow-xl">
-            <div className="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center mx-auto mb-3 text-indigo-400 border border-indigo-500/20">
+          <div className="bg-surface rounded-3xl border border-line p-14 text-center shadow-card">
+            <div className="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center mx-auto mb-3 text-accent border border-indigo-500/20">
               <Inbox className="w-7 h-7" />
             </div>
-            <h3 className="text-base font-bold text-white mb-1">
+            <h3 className="text-base font-bold text-fg mb-1">
               {statusFilter === 'all' ? 'No posts yet' : `No ${statusFilter} posts found`}
             </h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+            <p className="text-xs text-fg-muted max-w-sm mx-auto">
               {statusFilter === 'all'
                 ? 'Create a draft using the composer on the left to start publishing across your networks.'
                 : `You currently do not have any items filtered under "${statusFilter}".`}
@@ -366,15 +366,15 @@ export default function PostsPage() {
                       setPreviewPost(post);
                     }
                   }}
-                  className={`relative bg-[#0e1322]/90 backdrop-blur-2xl rounded-2xl border border-slate-800/80 p-4 sm:p-5 shadow-xl hover:border-slate-700 hover:-translate-y-0.5 transition-all duration-200 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${borderAccent} ${
+                  className={`relative bg-surface rounded-2xl border border-line p-4 sm:p-5 shadow-card hover:border-line-strong hover:-translate-y-0.5 transition-all duration-200 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${borderAccent} ${
                     clickable ? 'cursor-pointer' : 'opacity-70 pointer-events-none'
                   }`}
                 >
                   {post.status === 'uploading' && (
-                    <div className="absolute inset-0 flex items-center justify-center z-10 bg-[#090d16]/80 backdrop-blur-[2px] rounded-2xl">
+                    <div className="absolute inset-0 flex items-center justify-center z-10 bg-canvas/80 backdrop-blur-[2px] rounded-2xl">
                       <div className="flex flex-col items-center">
                         <div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                        <span className="mt-2 text-xs font-bold text-indigo-400">Uploading media...</span>
+                        <span className="mt-2 text-xs font-bold text-accent">Uploading media...</span>
                       </div>
                     </div>
                   )}
@@ -384,31 +384,31 @@ export default function PostsPage() {
                     <div className="flex flex-wrap items-center gap-2 min-w-0">
                       {/* Status Badges */}
                       {post.status === 'published' && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 shadow-[0_0_8px_rgba(16,185,129,0.2)]">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-[0_0_8px_rgba(16,185,129,0.2)]">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
                           Published
                         </span>
                       )}
                       {post.status === 'scheduled' && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-800/60 shadow-[0_0_8px_rgba(245,158,11,0.2)]">
-                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 shadow-[0_0_8px_rgba(245,158,11,0.2)]">
+                          <Clock className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
                           Scheduled
                         </span>
                       )}
                       {failed && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/60 shadow-[0_0_8px_rgba(244,63,94,0.2)]">
-                          <AlertCircle className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 shadow-[0_0_8px_rgba(244,63,94,0.2)]">
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-700 dark:text-rose-400 animate-pulse" />
                           Delivery Failed
                         </span>
                       )}
                       {post.status === 'draft' && !failed && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                          <FileText className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-surface-hover text-fg-secondary border border-line-strong">
+                          <FileText className="w-3.5 h-3.5 text-fg-muted" />
                           Draft
                         </span>
                       )}
 
-                      <span className="text-[11px] text-slate-400 font-medium">
+                      <span className="text-[11px] text-fg-muted font-medium">
                         {post.schedules && post.schedules.length > 0
                           ? new Date(getPostStart(post) as string).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
                           : new Date(post.created_at as string).toLocaleDateString()}
@@ -420,7 +420,7 @@ export default function PostsPage() {
                           {cardPlatforms.map(plat => (
                             <span
                               key={plat}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-slate-300 border border-slate-800"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-surface-muted text-fg-secondary border border-line"
                             >
                               <span className={`w-1.5 h-1.5 rounded-full ${
                                 plat === 'youtube' ? 'bg-red-500' :
@@ -448,7 +448,7 @@ export default function PostsPage() {
                           }}
                           disabled={!!publishingPostId || deleting || isViewer}
                           aria-busy={publishing}
-                          className="inline-flex items-center gap-1.5 bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
+                          className="inline-flex items-center gap-1.5 bg-primary text-white px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
                         >
                           {publishing ? <RotateCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                           {publishing ? 'Publishing...' : 'Publish'}
@@ -471,7 +471,7 @@ export default function PostsPage() {
                         onClick={(e) => { e.stopPropagation(); handleDelete(post.id); }}
                         disabled={isViewer || deleting || publishing || retrying}
                         aria-busy={deleting}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="p-1.5 rounded-xl text-fg-muted hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         title={deleting ? 'Deleting...' : 'Delete post'}
                         aria-label={deleting ? 'Deleting post' : 'Delete post'}
                       >
@@ -482,7 +482,7 @@ export default function PostsPage() {
 
                   {/* Clean Error Presentation */}
                   {failed && (
-                    <div className="mb-3.5 p-3 rounded-xl bg-rose-950/30 border border-rose-800/60 text-xs text-rose-200">
+                    <div className="mb-3.5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 text-xs text-rose-800 dark:text-rose-200">
                       {failureLines.length > 0 ? (
                         failureLines.map((l, idx) => {
                           const errInfo = cleanErrorMessage(l.error);
@@ -491,7 +491,7 @@ export default function PostsPage() {
 
                           return (
                             <div key={l.platform} className="space-y-1">
-                              <div className="flex items-start justify-between gap-2 text-rose-200">
+                              <div className="flex items-start justify-between gap-2 text-rose-800 dark:text-rose-200">
                                 <div>
                                   <span className="font-bold capitalize">{l.platform}: </span>
                                   <span>{errInfo.summary}</span>
@@ -501,7 +501,7 @@ export default function PostsPage() {
                                     type="button"
                                     aria-expanded={isExpanded}
                                     onClick={(e) => toggleErrorExpand(e, errKey)}
-                                    className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 underline shrink-0 flex items-center gap-0.5"
+                                    className="text-[11px] font-semibold text-rose-700 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 underline shrink-0 flex items-center gap-0.5"
                                   >
                                     {isExpanded ? 'Less' : 'Details'}
                                     {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -509,7 +509,7 @@ export default function PostsPage() {
                                 )}
                               </div>
                               {isExpanded && errInfo.detail && (
-                                <pre className="mt-2 p-2 rounded-lg bg-rose-950/70 border border-rose-800 text-rose-200 font-mono text-[10px] whitespace-pre-wrap break-all overflow-x-auto max-h-40">
+                                <pre className="mt-2 p-2 rounded-lg bg-rose-50 dark:bg-rose-950/70 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 font-mono text-[10px] whitespace-pre-wrap break-all overflow-x-auto max-h-40">
                                   {errInfo.detail}
                                 </pre>
                               )}
@@ -517,13 +517,13 @@ export default function PostsPage() {
                           );
                         })
                       ) : (
-                        <div className="text-rose-300 font-medium">Publishing failed. Check account credentials or retry.</div>
+                        <div className="text-rose-700 dark:text-rose-300 font-medium">Publishing failed. Check account credentials or retry.</div>
                       )}
                     </div>
                   )}
 
                   {retryNotes.length > 0 && (
-                    <div className="mb-3 p-2.5 rounded-xl bg-amber-950/30 border border-amber-800/60 text-xs text-amber-200 space-y-0.5">
+                    <div className="mb-3 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-200 space-y-0.5">
                       {retryNotes.map((n) => (
                         <div key={n.platform}>
                           <span className="font-bold capitalize">{n.platform}: </span> {n.note}
@@ -533,13 +533,13 @@ export default function PostsPage() {
                   )}
 
                   {/* Post Content */}
-                  <p className="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap mb-3.5 line-clamp-3">
+                  <p className="text-fg text-sm leading-relaxed whitespace-pre-wrap mb-3.5 line-clamp-3">
                     {post.content}
                   </p>
 
                   {/* Media Strip */}
                   {mediaObj && (
-                    <div className="flex gap-2 overflow-hidden h-24 rounded-xl bg-slate-900 border border-slate-800 p-2">
+                    <div className="flex gap-2 overflow-hidden h-24 rounded-xl bg-surface-muted border border-line p-2">
                       {Object.entries(mediaObj).map(([platform, rawUrl]) => {
                         const url = resolveMediaUrl(rawUrl);
                         const isVideo = typeof url === 'string' && (!!url.match(/\.(mp4|mov|webm)(\?.*)?$/i) || url.endsWith('#video'));
@@ -549,7 +549,7 @@ export default function PostsPage() {
                         return (
                           <div
                             key={platform}
-                            className="relative bg-slate-900 rounded-lg overflow-hidden h-full shrink-0 group/media"
+                            className="relative bg-surface-muted rounded-lg overflow-hidden h-full shrink-0 group/media"
                             style={frame.ratio ? { aspectRatio: `${frame.ratio.w} / ${frame.ratio.h}` } : undefined}
                           >
                             {isVideo ? (
@@ -575,11 +575,11 @@ export default function PostsPage() {
                 <button
                   type="button"
                   onClick={() => setVisibleCount(prev => prev + 3)}
-                  className="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-800 hover:border-slate-700 text-xs font-semibold shadow-lg hover:shadow-indigo-500/10 transition-all cursor-pointer group"
+                  className="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-surface-muted/90 hover:bg-surface-hover text-fg hover:text-fg border border-line hover:border-line-strong text-xs font-semibold shadow-lg hover:shadow-indigo-500/10 transition-all cursor-pointer group"
                 >
-                  <ChevronDown className="w-4 h-4 text-indigo-400 group-hover:translate-y-0.5 transition-transform" />
+                  <ChevronDown className="w-4 h-4 text-accent group-hover:translate-y-0.5 transition-transform" />
                   <span>Load More Posts</span>
-                  <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700/60 font-medium">
+                  <span className="text-[10px] text-fg-muted bg-surface-hover px-2 py-0.5 rounded-md border border-line-strong font-medium">
                     +{filteredPosts.length - visibleCount} remaining
                   </span>
                 </button>
@@ -604,24 +604,24 @@ export default function PostsPage() {
       {/* Preview Modal */}
       {previewPost && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-md p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-surface-muted/60 backdrop-blur-md p-4 animate-in fade-in duration-200"
           onClick={() => setPreviewPost(null)}
         >
           <div
             role="dialog"
             aria-modal="true"
             aria-label="Post preview"
-            className="bg-[#0e1322] rounded-3xl shadow-2xl border border-slate-800 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden text-slate-100"
+            className="bg-surface rounded-3xl shadow-pop border border-line w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden text-fg"
             onClick={e => e.stopPropagation()}
           >
-            <div className="px-4 sm:px-6 py-4 border-b border-slate-800 flex items-center justify-between gap-3 bg-[#0e1322] z-10">
+            <div className="px-4 sm:px-6 py-4 border-b border-line flex items-center justify-between gap-3 bg-surface z-10">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+                <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-accent flex items-center justify-center border border-indigo-500/30">
                   <Eye className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">Multi-Platform Preview</h3>
-                  <p className="text-[11px] text-slate-400">Live preview of how content renders across connected channels</p>
+                  <h3 className="font-bold text-fg text-base">Multi-Platform Preview</h3>
+                  <p className="text-[11px] text-fg-muted">Live preview of how content renders across connected channels</p>
                 </div>
               </div>
               <button
@@ -629,13 +629,13 @@ export default function PostsPage() {
                 autoFocus
                 onClick={() => setPreviewPost(null)}
                 aria-label="Close preview"
-                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+                className="p-2 rounded-xl text-fg-muted hover:text-fg hover:bg-surface-hover transition-colors shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 sm:p-8 overflow-y-auto flex-1 bg-[#090d16] custom-scrollbar">
+            <div className="p-4 sm:p-8 overflow-y-auto flex-1 bg-canvas custom-scrollbar">
               {(() => {
                 let mediaObj = null;
                 try {
@@ -652,7 +652,7 @@ export default function PostsPage() {
                         const isVideo = typeof url === 'string' && (!!url.match(/\.(mp4|mov|webm)(\?.*)?$/i) || url.endsWith('#video'));
                         return (
                           <div key={platform} className="shrink-0 w-full sm:w-87.5 md:w-100">
-                            <div className="text-xs font-bold text-slate-200 uppercase tracking-wider mb-3 flex items-center gap-2 bg-slate-900 px-3.5 py-1.5 rounded-full shadow-xs w-max mx-auto border border-slate-800">
+                            <div className="text-xs font-bold text-fg uppercase tracking-wider mb-3 flex items-center gap-2 bg-surface-muted px-3.5 py-1.5 rounded-full shadow-xs w-max mx-auto border border-line">
                               <div className={`w-2 h-2 rounded-full ${platform === 'instagram' ? 'bg-pink-500' : platform === 'twitter' ? 'bg-sky-400' : platform === 'tiktok' ? 'bg-slate-400' : platform === 'facebook' ? 'bg-blue-600' : 'bg-red-600'}`} />
                               {platform}
                             </div>
@@ -664,8 +664,8 @@ export default function PostsPage() {
                   );
                 } else {
                   return (
-                    <div className="max-w-2xl mx-auto bg-slate-900 p-5 sm:p-8 rounded-2xl shadow-xl border border-slate-800">
-                      <p className="text-slate-100 text-base whitespace-pre-wrap leading-relaxed">{previewPost.content}</p>
+                    <div className="max-w-2xl mx-auto bg-surface-muted p-5 sm:p-8 rounded-2xl shadow-card border border-line">
+                      <p className="text-fg text-base whitespace-pre-wrap leading-relaxed">{previewPost.content}</p>
                     </div>
                   );
                 }

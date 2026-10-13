@@ -42,7 +42,7 @@ export function PostModalShell({ onClose, isBusy, ariaLabel, children }: PostMod
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm p-4"
       onMouseDown={(e) => {
         // Only a press that starts on the backdrop closes it, so dragging a text selection out of the panel doesn't.
         if (e.target === e.currentTarget && !isBusy) onClose();
@@ -54,14 +54,14 @@ export function PostModalShell({ onClose, isBusy, ariaLabel, children }: PostMod
         aria-modal="true"
         aria-label={ariaLabel}
         tabIndex={-1}
-        className="relative bg-[#0e1322] border border-slate-800 text-slate-100 rounded-3xl shadow-2xl shadow-indigo-950/50 w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden outline-none backdrop-blur-2xl"
+        className="relative bg-surface border border-line text-fg rounded-3xl shadow-pop w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden outline-none backdrop-blur-2xl"
       >
         <button
           type="button"
           aria-label="Close"
           disabled={isBusy}
           onClick={onClose}
-          className="absolute top-4 right-4 z-10 p-2 bg-slate-900/80 border border-slate-800 rounded-full text-slate-400 hover:bg-slate-800 hover:text-white shadow-sm transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          className="absolute top-4 right-4 z-10 p-2 bg-surface-muted/80 border border-line rounded-full text-fg-muted hover:bg-surface-hover hover:text-fg shadow-sm transition-colors disabled:opacity-40 disabled:pointer-events-none"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
         </button>

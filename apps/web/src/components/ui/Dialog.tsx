@@ -53,7 +53,7 @@ function DialogPanel({ title, description, onClose, busy, children, footer, role
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay backdrop-blur-sm p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
     >
       <div
@@ -63,19 +63,19 @@ function DialogPanel({ title, description, onClose, busy, children, footer, role
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
-        className={`relative w-full ${maxWidth} rounded-2xl border border-slate-800 bg-[#0e1322] p-5 sm:p-6 text-slate-100 shadow-2xl shadow-black/50 outline-none`}
+        className={`relative w-full ${maxWidth} rounded-xl border border-line bg-surface shadow-card p-5 sm:p-6 text-fg shadow-pop outline-none`}
       >
         <button
           type="button"
           aria-label="Close dialog"
           onClick={onClose}
           disabled={busy}
-          className="absolute top-3.5 right-3.5 rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors disabled:opacity-40"
+          className="absolute top-3.5 right-3.5 rounded-lg p-1.5 text-fg-muted hover:bg-surface-hover hover:text-fg transition-colors disabled:opacity-40"
         >
           <X className="h-4 w-4" />
         </button>
-        <h2 id={titleId} className="pr-8 text-base font-semibold text-white">{title}</h2>
-        {description && <div id={descId} className="mt-1.5 text-sm text-slate-400 leading-relaxed">{description}</div>}
+        <h2 id={titleId} className="pr-8 text-base font-semibold text-fg">{title}</h2>
+        {description && <div id={descId} className="mt-1.5 text-sm text-fg-muted leading-relaxed">{description}</div>}
         {children && <div className="mt-4">{children}</div>}
         {footer && <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">{footer}</div>}
       </div>

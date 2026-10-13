@@ -38,7 +38,7 @@ export function PlatformPickerDialog({ connectedPlatforms, onCancel, onConfirm }
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            className="rounded-xl border border-line-strong bg-surface-muted px-4 py-2 text-xs font-semibold text-fg-secondary hover:bg-surface-hover hover:text-fg transition-colors"
           >
             Cancel
           </button>
@@ -46,7 +46,7 @@ export function PlatformPickerDialog({ connectedPlatforms, onCancel, onConfirm }
             type="button"
             onClick={() => onConfirm(selected)}
             disabled={selected.length === 0}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:pointer-events-none"
           >
             Publish to {selected.length || 'selected'} platform{selected.length === 1 ? '' : 's'}
           </button>
@@ -68,16 +68,16 @@ export function PlatformPickerDialog({ connectedPlatforms, onCancel, onConfirm }
                 onClick={() => toggle(p.id)}
                 className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-medium transition-colors ${
                   isSelected
-                    ? 'border-indigo-500 bg-indigo-500/15 text-white'
-                    : 'border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:bg-slate-800'
+                    ? 'border-indigo-500 bg-indigo-500/15 text-fg'
+                    : 'border-line bg-surface-muted/70 text-fg-secondary hover:border-line-strong hover:bg-surface-hover'
                 }`}
               >
-                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${isSelected ? 'border-indigo-400 bg-indigo-500' : 'border-slate-600'}`}>
-                  {isSelected && <Check className="h-3 w-3 text-white" />}
+                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${isSelected ? 'border-indigo-400 bg-indigo-500' : 'border-line-strong'}`}>
+                  {isSelected && <Check className="h-3 w-3 text-fg" />}
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate">{p.label}</span>
-                  {!isConnected && <span className="block text-[10px] text-slate-500">Not connected</span>}
+                  {!isConnected && <span className="block text-[10px] text-fg-subtle">Not connected</span>}
                 </span>
               </button>
             );

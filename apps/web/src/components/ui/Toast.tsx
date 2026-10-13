@@ -79,15 +79,15 @@ function ToastCard({ item, onDismiss }: { item: ToastItem; onDismiss: (id: numbe
   }, [item.id, item.kind, onDismiss]);
 
   const styles = {
-    success: { box: 'border-emerald-500/30', icon: <CheckCircle2 className="h-4 w-4 text-emerald-400" /> },
-    error: { box: 'border-rose-500/40', icon: <AlertCircle className="h-4 w-4 text-rose-400" /> },
-    info: { box: 'border-indigo-500/30', icon: <Info className="h-4 w-4 text-indigo-400" /> },
+    success: { box: 'border-emerald-500/30', icon: <CheckCircle2 className="h-4 w-4 text-emerald-700 dark:text-emerald-400" /> },
+    error: { box: 'border-rose-500/40', icon: <AlertCircle className="h-4 w-4 text-rose-700 dark:text-rose-400" /> },
+    info: { box: 'border-indigo-500/30', icon: <Info className="h-4 w-4 text-accent" /> },
   }[item.kind];
 
   return (
     <div
       role={item.kind === 'error' ? 'alert' : 'status'}
-      className={`pointer-events-auto flex w-full max-w-sm items-start gap-2.5 rounded-xl border ${styles.box} bg-[#0e1322]/95 px-3.5 py-3 text-sm text-slate-100 shadow-2xl shadow-black/40 backdrop-blur`}
+      className={`pointer-events-auto flex w-full max-w-sm items-start gap-2.5 rounded-xl border ${styles.box} bg-surface px-3.5 py-3 text-sm text-fg shadow-pop backdrop-blur`}
     >
       <span className="mt-0.5 shrink-0">{styles.icon}</span>
       <p className="min-w-0 flex-1 break-words leading-snug">{item.message}</p>
@@ -95,7 +95,7 @@ function ToastCard({ item, onDismiss }: { item: ToastItem; onDismiss: (id: numbe
         type="button"
         onClick={() => onDismiss(item.id)}
         aria-label="Dismiss notification"
-        className="-mr-1 shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+        className="-mr-1 shrink-0 rounded-md p-1 text-fg-muted hover:bg-surface-hover hover:text-fg transition-colors"
       >
         <X className="h-3.5 w-3.5" />
       </button>

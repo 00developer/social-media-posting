@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useDashboard, type Post } from '@/components/DashboardProvider';
 import { PlatformPreviewCard } from '@/components/post/PlatformPreviewCard';
 import { MEDIA_SERVICE_URL, POST_SERVICE_URL, SCHEDULING_SERVICE_URL } from '@/lib/apiUrls';
 import { takeAiDraftHandoff } from '@/lib/aiDraftHandoff';
 import { authHeader } from '@/lib/supabase';
+import { useToast } from '@/components/ui/Toast';
+import { getScheduleProblem, MAX_UPLOAD_BYTES, toDateTimeLocal } from '@/lib/scheduleInput';
 import {
   Sparkles,
   PenSquare,
@@ -34,8 +36,12 @@ type PostComposerProps = {
 
 export type PostActionType = 'draft' | 'schedule' | 'publish';
 
+export { MAX_UPLOAD_BYTES };
+
 export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialScheduleAt = '', onSubmitted }: PostComposerProps) {
   const { user, activeTeam, fetchTeamData } = useDashboard();
+  const toast = useToast();
+  const fieldId = useId();
 
   const [newPostContent, setNewPostContent] = useState(() => (typeof window !== 'undefined' ? takeAiDraftHandoff() || '' : ''));
   const [scheduleAt, setScheduleAt] = useState(initialScheduleAt);
@@ -58,18 +64,48 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
     onOptimisticChange?.(post);
   };
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  // Earliest selectable schedule time; refreshed whenever the field gets focus (kept in state, not read during render).
+  const [minScheduleAt, setMinScheduleAt] = useState(() => toDateTimeLocal(new Date()));
+  // Guards against a double submit before React has re-rendered with the disabled buttons.
+  const submittingRef = useRef(false);
+  const [submittingAction, setSubmittingAction] = useState<PostActionType | null>(null);
 
-  const activePreviewPlatform = previewPlatform && selectedPlatforms.includes(previewPlatform) 
-    ? previewPlatform 
+  // Every object URL this composer created for its preview, revoked when replaced / removed / on unmount.
+  const previewObjectUrl = useRef<string | null>(null);
+  const replacePreview = (next: string | null) => {
+    if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+    previewObjectUrl.current = next ? next.split('#')[0] : null;
+    setMediaPreview(next);
+  };
+  useEffect(() => () => {
+    if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+  }, []);
+
+  const clearMedia = () => {
+    setMediaFile(null);
+    setAiImageUrl(null);
+    replacePreview(null);
+    setFileInputKey((prev) => prev + 1);
+  };
+
+  const activePreviewPlatform = previewPlatform && selectedPlatforms.includes(previewPlatform)
+    ? previewPlatform
     : (selectedPlatforms.length > 0 ? selectedPlatforms[0] : null);
 
   const handleMediaChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
+    setMediaError(null);
+    if (file && file.size > MAX_UPLOAD_BYTES) {
+      setMediaError(`"${file.name}" is ${(file.size / (1024 * 1024)).toFixed(1)} MB. The maximum upload size is 100 MB.`);
+      clearMedia();
+      return;
+    }
     setMediaFile(file);
     setAiImageUrl(null); // a new file needs a fresh AI-context upload
-    if (mediaPreview) {
-      URL.revokeObjectURL(mediaPreview.split('#')[0]);
-    }
+    replacePreview(null);
     if (file) {
       const isVid = file.type.startsWith('video/');
       if (isVid) {
@@ -84,18 +120,16 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
           });
           if (!res.ok) throw new Error('Transcode failed');
           const blob = await res.blob();
-          setMediaPreview(URL.createObjectURL(blob) + '#video');
+          replacePreview(URL.createObjectURL(blob) + '#video');
         } catch (err) {
           console.error('Failed to load remote preview, falling back to local:', err);
-          setMediaPreview(URL.createObjectURL(file) + '#video');
+          replacePreview(URL.createObjectURL(file) + '#video');
         } finally {
           setIsPreviewLoading(false);
         }
       } else {
-        setMediaPreview(URL.createObjectURL(file) + '#image');
+        replacePreview(URL.createObjectURL(file) + '#image');
       }
-    } else {
-      setMediaPreview(null);
     }
   };
 
@@ -154,12 +188,26 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
   };
 
   const handleCreatePost = async (actionType: PostActionType) => {
-    if (!user || !activeTeam) return;
+    if (!user || !activeTeam || submittingRef.current) return;
+    setFormError(null);
     if (!newPostContent || selectedPlatforms.length === 0) {
-      alert("Please enter content and select at least one platform.");
+      setFormError('Please enter content and select at least one platform.');
       return;
     }
-    
+    if (actionType === 'schedule') {
+      const problem = getScheduleProblem(scheduleAt, Date.now());
+      if (problem) {
+        setScheduleError(problem);
+        return;
+      }
+    }
+    if (mediaFile && mediaFile.size > MAX_UPLOAD_BYTES) {
+      setMediaError('The attached file is larger than 100 MB.');
+      return;
+    }
+    submittingRef.current = true;
+    setSubmittingAction(actionType);
+
     const optimisticMedia = mediaPreview ? { preview: mediaPreview } : {};
     setOptimisticPost({
       id: 'temp-upload',
@@ -168,7 +216,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
       created_at: new Date().toISOString(),
       media_url: JSON.stringify(optimisticMedia)
     });
-    
+
     try {
       let mediaUrls = {};
       if (mediaFile) {
@@ -186,7 +234,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
         if (mediaData.success) {
           mediaUrls = mediaData.mediaUrls;
         } else {
-          alert('Media upload failed: ' + mediaData.error);
+          toast.error(`Media upload failed: ${mediaData.error || `request failed (${mediaRes.status})`}`);
           return;
         }
       }
@@ -197,13 +245,13 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
         body: JSON.stringify({ teamId: activeTeam.id, content: newPostContent, mediaUrl: JSON.stringify(mediaUrls) })
       });
       const data = await res.json();
-      
+
       if (data.success) {
         const postId = data.data.id;
 
         if (actionType === 'schedule' || actionType === 'publish') {
-          const runAt = actionType === 'schedule' && scheduleAt 
-            ? new Date(scheduleAt) 
+          const runAt = actionType === 'schedule' && scheduleAt
+            ? new Date(scheduleAt)
             : new Date();
 
           const scheduleRes = await fetch(`${SCHEDULING_SERVICE_URL}/api/v1/schedules`, {
@@ -219,28 +267,32 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
           });
           const scheduleData = await scheduleRes.json();
           if (!scheduleData.success) {
-            alert('Failed to process: ' + scheduleData.error);
+            toast.error(`The post was saved as a draft, but could not be ${actionType === 'schedule' ? 'scheduled' : 'queued'}: ${scheduleData.error}`);
           } else if (actionType === 'publish') {
-            alert('Post queued for immediate publishing!');
+            toast.success('Post queued for immediate publishing.');
+          } else {
+            toast.success(`Post scheduled for ${runAt.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`);
           }
+        } else {
+          toast.success('Draft saved.');
         }
 
         setNewPostContent('');
         setScheduleAt('');
-        setMediaFile(null);
-        if (mediaPreview) URL.revokeObjectURL(mediaPreview);
-        setMediaPreview(null);
-        setFileInputKey(prev => prev + 1);
+        setScheduleError(null);
+        clearMedia();
         setSelectedPlatforms([]);
         fetchTeamData();
         onSubmitted?.(actionType);
       } else {
-        alert(data.error);
+        toast.error(data.error || 'Could not create the post.');
       }
     } catch (e: unknown) {
       console.error(e);
-      alert('Error creating post: ' + (e instanceof Error ? e.message : String(e)));
+      toast.error(`Error creating post: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+      submittingRef.current = false;
+      setSubmittingAction(null);
       setOptimisticPost(null);
     }
   };
@@ -249,17 +301,17 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
     { id: 'youtube', label: 'YouTube', activeClass: 'bg-red-600 text-white border-red-600 shadow-xs' },
     { id: 'instagram', label: 'Instagram', activeClass: 'bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white border-transparent shadow-xs' },
     { id: 'facebook', label: 'Facebook', activeClass: 'bg-blue-600 text-white border-blue-600 shadow-xs' },
-    { id: 'threads', label: 'Threads', activeClass: 'bg-slate-900 text-white border-slate-900 shadow-xs' },
+    { id: 'threads', label: 'Threads', activeClass: 'bg-slate-100 text-slate-950 border-slate-100 shadow-xs' },
     { id: 'twitter', label: 'Twitter', activeClass: 'bg-sky-500 text-white border-sky-500 shadow-xs' },
     { id: 'linkedin', label: 'LinkedIn', activeClass: 'bg-blue-700 text-white border-blue-700 shadow-xs' },
-    { id: 'tiktok', label: 'TikTok', activeClass: 'bg-slate-950 text-white border-slate-950 shadow-xs' },
+    { id: 'tiktok', label: 'TikTok', activeClass: 'bg-gradient-to-r from-cyan-500 to-pink-500 text-white border-transparent shadow-xs' },
     { id: 'pinterest', label: 'Pinterest', activeClass: 'bg-red-700 text-white border-red-700 shadow-xs' },
   ];
 
   return (
     <div className={variant === 'modal' ? 'bg-[#0d131f] text-slate-100' : 'bg-[#0d131f] p-5 rounded-2xl border border-slate-800 sticky top-20 text-slate-100 shadow-xs'}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className={`flex items-center justify-between gap-2 mb-4 ${variant === 'modal' ? 'pr-10' : ''}`}>
         <h2 className="text-sm font-semibold text-white flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
             <PenSquare className="w-3.5 h-3.5" />
@@ -272,12 +324,12 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
           </span>
         )}
       </div>
-      
+
       {/* AI Assistant Section */}
       {activeTeam?.role !== 'viewer' && (
         <div className="mb-4 rounded-xl border border-slate-800 bg-slate-900/50 p-3.5">
           <div className="flex items-center justify-between mb-2">
-            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
+            <label htmlFor={`${fieldId}-ai-prompt`} className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
               <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
               <span>AI Caption Assistant</span>
             </label>
@@ -285,6 +337,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
 
           <div className="space-y-2">
             <input
+              id={`${fieldId}-ai-prompt`}
               type="text"
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
@@ -340,7 +393,9 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                   Long paragraph
                 </button>
               </div>
+              <label htmlFor={`${fieldId}-ai-draft`} className="sr-only">AI draft</label>
               <textarea
+                id={`${fieldId}-ai-draft`}
                 value={aiDraft}
                 onChange={(e) => setAiDraft(e.target.value)}
                 rows={3}
@@ -351,7 +406,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                 <button
                   type="button"
                   onClick={insertAiDraft}
-                  className="shrink-0 rounded-xl bg-white px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-slate-200 shadow-md transition-all"
+                  disabled={!aiDraft.trim()}
+                  className="shrink-0 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 shadow-xs transition-colors disabled:opacity-50"
                 >
                   Use in Post
                 </button>
@@ -363,7 +419,9 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
 
       {/* Main Post Text Area */}
       <div className="relative mb-5">
+        <label htmlFor={`${fieldId}-content`} className="sr-only">Post content</label>
         <textarea
+          id={`${fieldId}-content`}
           className="w-full border border-slate-800 rounded-2xl p-4 text-sm text-slate-100 bg-slate-900/90 hover:bg-slate-900 focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none resize-none placeholder-slate-500 shadow-inner leading-relaxed"
           rows={5}
           placeholder="What's happening? Share updates, announcements, or attach media..."
@@ -426,7 +484,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
           </button>
         </div>
       </div>
-      
+
       {/* Target Platforms */}
       <div className="mb-5">
         <div className="flex items-center justify-between mb-2">
@@ -445,9 +503,10 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                   else setSelectedPlatforms([...selectedPlatforms, p.id]);
                 }}
                 disabled={activeTeam?.role === 'viewer'}
+                aria-pressed={isSelected}
                 className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all flex items-center gap-1.5 ${
                   isSelected
-                    ? p.activeClass
+                    ? `${p.activeClass} ring-2 ring-indigo-400/50 ring-offset-1 ring-offset-[#0d131f]`
                     : 'bg-slate-900/80 text-slate-300 border-slate-800 hover:bg-slate-800 hover:border-slate-700 shadow-2xs'
                 }`}
               >
@@ -467,7 +526,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
             {mediaFile && (
               <button
                 type="button"
-                onClick={() => { setMediaFile(null); setMediaPreview(null); setFileInputKey(prev => prev + 1); }}
+                onClick={() => { clearMedia(); setMediaError(null); }}
                 className="text-[10px] text-rose-400 font-bold hover:text-rose-300 hover:bg-rose-950/40 px-2 py-0.5 rounded-md transition-colors uppercase tracking-wider flex items-center gap-1"
               >
                 <Trash2 className="w-3 h-3" />
@@ -477,19 +536,20 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
           </div>
 
           {!mediaFile ? (
-            <label className="border-2 border-dashed border-slate-800 hover:border-indigo-500/60 rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-indigo-950/20 transition-all group bg-slate-900/40">
+            <label className="border-2 border-dashed border-slate-800 hover:border-indigo-500/60 focus-within:border-indigo-500/60 rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-indigo-950/20 transition-all group bg-slate-900/40">
               <div className="w-9 h-9 rounded-xl bg-slate-800 group-hover:bg-indigo-950 text-slate-400 group-hover:text-indigo-400 flex items-center justify-center mb-1.5 transition-colors border border-slate-700/60">
                 <UploadCloud className="w-5 h-5" />
               </div>
               <span className="text-xs font-semibold text-slate-200">Upload video or photo</span>
               <span className="text-[10px] text-slate-400 mt-0.5">MP4, WEBM, PNG, JPEG up to 100MB</span>
-              <input 
+              <input
                 key={fileInputKey}
-                type="file" 
+                type="file"
                 accept="image/*,video/*"
-                disabled={activeTeam?.role === 'viewer' || isPreviewLoading} 
-                onChange={handleMediaChange} 
-                className="hidden" 
+                disabled={activeTeam?.role === 'viewer' || isPreviewLoading}
+                onChange={handleMediaChange}
+                aria-label="Upload video or photo (up to 100 MB)"
+                className="sr-only"
               />
             </label>
           ) : (
@@ -505,6 +565,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
               </div>
             </div>
           )}
+
+          {mediaError && <p role="alert" className="mt-2 text-xs font-medium text-rose-400">{mediaError}</p>}
 
           {isPreviewLoading && (
             <div className="flex items-center gap-2 text-xs text-indigo-400 font-semibold mt-2">
@@ -522,6 +584,8 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                     {selectedPlatforms.map(p => (
                       <button
                         key={p}
+                        type="button"
+                        aria-pressed={activePreviewPlatform === p}
                         onClick={() => setPreviewPlatform(p)}
                         className={`text-[10px] px-2.5 py-1 rounded-lg font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
                           activePreviewPlatform === p
@@ -533,7 +597,7 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
                       </button>
                     ))}
                   </div>
-                  
+
                   <div className={variant === 'modal' ? 'bg-[#090d16] p-4 flex items-start justify-center' : 'flex-1 overflow-y-auto max-h-128 bg-[#090d16] p-4 flex items-start justify-center custom-scrollbar'}>
                     <PlatformPreviewCard platform={activePreviewPlatform} content={newPostContent} mediaUrl={mediaPreview} isVideo={mediaFile?.type.startsWith('video/')} contentType={contentType} />
                   </div>
@@ -550,27 +614,41 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
 
         {/* Schedule Field */}
         <div>
-          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <label htmlFor={`${fieldId}-schedule`} className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             Schedule (Optional)
           </label>
-          <input 
-            type="datetime-local" 
-            className="w-full border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 bg-slate-900/90 hover:bg-slate-900 focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none shadow-inner"
+          <input
+            id={`${fieldId}-schedule`}
+            type="datetime-local"
+            className={`w-full border rounded-xl px-3.5 py-2 text-xs text-slate-200 bg-slate-900/90 hover:bg-slate-900 focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none shadow-inner [color-scheme:dark] ${scheduleError ? 'border-rose-500/70' : 'border-slate-800'}`}
             value={scheduleAt}
+            min={minScheduleAt}
             disabled={activeTeam?.role === 'viewer'}
-            onChange={(e) => setScheduleAt(e.target.value)}
+            aria-invalid={!!scheduleError}
+            aria-describedby={scheduleError ? `${fieldId}-schedule-error` : undefined}
+            onFocus={() => setMinScheduleAt(toDateTimeLocal(new Date()))}
+            onChange={(e) => {
+              setScheduleAt(e.target.value);
+              setScheduleError(getScheduleProblem(e.target.value, Date.now()));
+            }}
           />
+          {scheduleError && (
+            <p id={`${fieldId}-schedule-error`} role="alert" className="mt-1.5 text-xs font-medium text-rose-400">{scheduleError}</p>
+          )}
         </div>
       </div>
+
+      {formError && <p role="alert" className="mb-2 text-xs font-medium text-rose-400">{formError}</p>}
 
       {/* Action Buttons */}
       <div className="flex gap-2.5 mt-2">
         {scheduleAt ? (
-          <button 
+          <button
             type="button"
             onClick={() => handleCreatePost('schedule')}
-            disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null}
+            disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null || !!scheduleError || !!mediaError}
+            aria-busy={optimisticPost !== null}
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-semibold text-xs shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
           >
             {optimisticPost ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />}
@@ -578,23 +656,24 @@ export function PostComposer({ onOptimisticChange, variant = 'sidebar', initialS
           </button>
         ) : (
           <>
-            <button 
+            <button
               type="button"
               onClick={() => handleCreatePost('publish')}
-              disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null}
+              disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null || !!mediaError}
+              aria-busy={optimisticPost !== null}
               className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-xl font-semibold text-xs shadow-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
             >
-              {optimisticPost ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              <span>{optimisticPost ? 'Publishing...' : 'Publish Now'}</span>
+              {submittingAction === 'publish' ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              <span>{submittingAction === 'publish' ? 'Publishing...' : 'Publish Now'}</span>
             </button>
-            <button 
+            <button
               type="button"
               onClick={() => handleCreatePost('draft')}
-              disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null}
+              disabled={activeTeam?.role === 'viewer' || !newPostContent || selectedPlatforms.length === 0 || optimisticPost !== null || !!mediaError}
               className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 py-2.5 rounded-xl font-semibold text-xs transition-colors disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5 shadow-xs"
             >
-              <Bookmark className="w-3.5 h-3.5 text-slate-400" />
-              <span>{optimisticPost ? 'Saving...' : 'Save Draft'}</span>
+              {submittingAction === 'draft' ? <RotateCw className="w-3.5 h-3.5 animate-spin text-slate-400" /> : <Bookmark className="w-3.5 h-3.5 text-slate-400" />}
+              <span>{submittingAction === 'draft' ? 'Saving...' : 'Save Draft'}</span>
             </button>
           </>
         )}

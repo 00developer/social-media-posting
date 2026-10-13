@@ -8,11 +8,12 @@ import {
   shouldWarnReelOrientation,
   type PostContentType,
 } from '@/lib/mediaFrame';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
 
 export type VideoSize = { width: number; height: number };
 
 export const VideoPlayer = ({ src, className, onMetadata }: { src: string, className?: string, onMetadata?: (size: VideoSize) => void }) => {
-  const cleanSrc = src.split('#')[0];
+  const cleanSrc = resolveMediaUrl(src).split('#')[0];
   const videoSrc = cleanSrc ? `${cleanSrc}#t=0.001` : '';
 
   return (
@@ -40,7 +41,9 @@ type PlatformPreviewCardProps = {
   contentType?: PostContentType;
 };
 
-const PlatformCard = ({ platform, content, mediaUrl, isVideo, contentType, onVideoMetadata }: PlatformPreviewCardProps & { onVideoMetadata?: (size: VideoSize) => void }) => {
+const PlatformCard = ({ platform, content, mediaUrl: rawMediaUrl, isVideo, contentType, onVideoMetadata }: PlatformPreviewCardProps & { onVideoMetadata?: (size: VideoSize) => void }) => {
+  // Display-only rewrite of *.supabase.co storage URLs (ISP blocks); the stored URL is untouched.
+  const mediaUrl = resolveMediaUrl(rawMediaUrl) ?? null;
   const renderHeader = () => (
     <div className="flex items-center gap-3 p-3.5">
       <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 shrink-0 text-slate-300">

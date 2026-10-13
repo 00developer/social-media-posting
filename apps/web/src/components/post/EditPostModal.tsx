@@ -39,7 +39,7 @@ const formatTime = (iso: string) => new Date(iso).toLocaleString([], { dateStyle
 // Only the caption can be edited (time, platforms and media stay as scheduled). Whether it is editable at
 // all comes from getEditability, which mirrors the server; the server (PATCH /api/v1/posts/:id) is the real gate.
 // Mount it only while it should be visible ({post && <EditPostModal … />}) so every open starts fresh.
-export function EditPostModal({ post, userId, teamId, isViewer, onClose, onSaved, onOutdated, onRetried }: EditPostModalProps) {
+export function EditPostModal({ post, teamId, isViewer, onClose, onSaved, onOutdated, onRetried }: EditPostModalProps) {
   const original = post.content ?? '';
   const [draft, setDraft] = useState(original);
   const [saving, setSaving] = useState(false);

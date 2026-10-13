@@ -37,7 +37,10 @@ function roundedTopBar(x: number, y: number, w: number, h: number, r: number): s
 /** Luxury Animated Bar Chart with glowing gradients, floating tooltip, and side-by-side platform metrics */
 export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: ChartData; metricLabel: string; mode?: 'total' | 'gain' }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const [activePlatform, setActivePlatform] = useState<string | null>(null);
+  // Hover previews a platform; a click pins it (stays highlighted after the pointer leaves), click again to unpin.
+  const [hoverPlatform, setHoverPlatform] = useState<string | null>(null);
+  const [pinnedPlatform, setPinnedPlatform] = useState<string | null>(null);
+  const activePlatform = hoverPlatform ?? pinnedPlatform;
 
   if (data.series.length === 0 || data.days.length === 0) {
     return <p className="py-10 text-center text-sm text-slate-400">No {metricLabel.toLowerCase()} history for this selection. Either no numbers are saved yet, or this platform does not provide {metricLabel.toLowerCase()} (for example Facebook and Instagram views). Try another metric.</p>;
@@ -88,14 +91,17 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
   const animKey = `bar-${metricLabel}-${mode}-${N}-${data.days[0]}`;
 
   return (
-    <div className="relative">
-      {/* Floating Glassmorphic Tooltip */}
+    <div>
+      {/* Scrolls sideways on narrow screens instead of shrinking the text to an unreadable size. */}
+      <div className="overflow-x-auto custom-scrollbar -mx-1 px-1">
+      <div className="relative min-w-[540px]">
+      {/* Floating Glassmorphic Tooltip (inside the chart box so the scroll container never clips it) */}
       {hoveredIdx !== null && (
         <div
-          className="pointer-events-none absolute -top-2 z-30 flex flex-col gap-1.5 rounded-2xl border border-slate-700/80 bg-slate-900/95 p-3 text-xs shadow-2xl backdrop-blur-2xl transition-all duration-75"
+          className="pointer-events-none absolute top-0 z-30 flex flex-col gap-1.5 rounded-2xl border border-slate-700/80 bg-slate-900/95 p-3 text-xs shadow-2xl backdrop-blur-2xl transition-all duration-75"
           style={{
             left: `${Math.min(84, Math.max(16, (slotCenterX(hoveredIdx) / W) * 100))}%`,
-            transform: 'translateX(-50%) translateY(-100%)',
+            transform: 'translateX(-50%)',
           }}
         >
           <div className="flex items-center justify-between gap-4 border-b border-slate-800 pb-1.5 text-[11px] font-bold text-slate-300">
@@ -275,7 +281,7 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
                         textAnchor="middle"
                         fontSize={10}
                         fill={isDayHovered || isHighlighted ? '#ffffff' : '#94a3b8'}
-                        className="font-bold select-none tabular-nums transition-colors pointer-events-none"
+                        className={`font-bold select-none tabular-nums transition-colors pointer-events-none ${isDayHovered || isHighlighted ? '' : 'max-sm:hidden'}`}
                       >
                         {val.toLocaleString()}
                       </text>
@@ -287,6 +293,8 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
           );
         })}
       </svg>
+      </div>
+      </div>
 
       {/* Interactive Platform Legend Pills */}
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-slate-300 font-medium">
@@ -294,9 +302,14 @@ export function AnalyticsChart({ data, metricLabel, mode = 'total' }: { data: Ch
           <button
             key={s.platform}
             type="button"
-            onMouseEnter={() => setActivePlatform(s.platform)}
-            onMouseLeave={() => setActivePlatform(null)}
-            onClick={() => setActivePlatform((prev) => (prev === s.platform ? null : s.platform))}
+            aria-pressed={pinnedPlatform === s.platform}
+            onMouseEnter={() => setHoverPlatform(s.platform)}
+            onMouseLeave={() => setHoverPlatform(null)}
+            onClick={() => {
+              setPinnedPlatform((prev) => (prev === s.platform ? null : s.platform));
+              // Drop the hover preview so the new pinned state shows immediately (also after unpinning).
+              setHoverPlatform(null);
+            }}
             className={`inline-flex items-center gap-1.5 capitalize rounded-full px-2.5 py-1 transition-all ${
               activePlatform === s.platform
                 ? 'bg-slate-800 text-white shadow-md ring-1 ring-slate-700'

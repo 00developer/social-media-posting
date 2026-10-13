@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LegalPage, BRAND, CONTACT_EMAIL } from '@/components/LegalPage';
 
-export const metadata: Metadata = { title: `Terms of Service - ${BRAND}` };
+export const metadata: Metadata = { title: "Terms of Service" };
 
 export default function TermsPage() {
   return (

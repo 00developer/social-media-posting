@@ -1,29 +1,37 @@
 import Link from 'next/link';
 import React from 'react';
+import { Zap } from 'lucide-react';
 
+// Legal name used in the privacy policy, terms and data-deletion pages (what app reviewers see); the in-app brand is "SocialPush".
 export const BRAND = 'CodeLabs-SocialPush';
 export const CONTACT_EMAIL = 'askanything46@gmail.com';
 export const EFFECTIVE_DATE = '24 September 2026';
 
 // Shared, public (no login) frame for the about / privacy / terms / data-deletion pages.
+// Same dark "Obsidian" look as the login page and the dashboard.
 export function LegalPage({ title, updated = true, children }: { title: string; updated?: boolean; children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
-          <Link href="/about" className="text-lg font-bold text-indigo-700">{BRAND}</Link>
-          <Link href="/login" className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Log in</Link>
+    <div className="min-h-screen bg-[#090d16] text-slate-300 selection:bg-indigo-500 selection:text-white">
+      <header className="border-b border-slate-800/80 bg-[#0d121f]">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+          <Link href="/about" className="flex items-center gap-2.5">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-xs">
+              <Zap className="h-3.5 w-3.5 fill-white" />
+            </span>
+            <span className="text-base font-bold tracking-tight text-white">{BRAND}</span>
+          </Link>
+          <Link href="/login" className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500">Log in</Link>
         </div>
       </header>
-      <main className="mx-auto max-w-3xl px-6 py-10">
-        <h1 className="mb-2 text-3xl font-bold text-gray-900">{title}</h1>
-        {updated && <p className="mb-8 text-sm text-gray-500">Effective date: {EFFECTIVE_DATE}</p>}
-        <div className="space-y-4 leading-relaxed [&_h2]:mt-8 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-gray-900 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-6 [&_a]:text-indigo-700 [&_a]:underline">
+      <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+        <h1 className="mb-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">{title}</h1>
+        {updated && <p className="mb-8 text-sm text-slate-500">Effective date: {EFFECTIVE_DATE}</p>}
+        <div className="space-y-4 rounded-2xl border border-slate-800 bg-[#0d131f] p-5 leading-relaxed sm:p-8 [&_h2]:mt-8 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:text-white [&_h2:first-child]:mt-0 [&_strong]:text-slate-100 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-6 [&_a]:text-indigo-400 [&_a]:underline [&_a:hover]:text-indigo-300">
           {children}
         </div>
       </main>
-      <footer className="border-t border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-3xl flex-wrap gap-x-6 gap-y-2 px-6 py-6 text-sm text-gray-600">
+      <footer className="border-t border-slate-800/80 bg-[#0d121f]">
+        <div className="mx-auto flex max-w-3xl flex-wrap gap-x-6 gap-y-2 px-4 py-6 text-sm text-slate-400 sm:px-6 [&_a:hover]:text-white">
           <Link href="/about">About</Link>
           <Link href="/privacy">Privacy Policy</Link>
           <Link href="/terms">Terms of Service</Link>

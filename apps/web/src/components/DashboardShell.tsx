@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useDashboard } from './DashboardProvider';
@@ -37,7 +37,19 @@ const NAV_ITEMS = [
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const { user, loading, teams, activeTeam, setActiveTeam, notifications, markNotificationsRead } = useDashboard();
   const pathname = usePathname();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // The menu is "open for" the path it was opened on, so navigating anywhere closes it without an effect.
+  const [menuOpenPath, setMenuOpenPath] = useState<string | null>(null);
+  const mobileMenuOpen = menuOpenPath === pathname;
+  const setMobileMenuOpen = (open: boolean) => setMenuOpenPath(open ? pathname : null);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpenPath(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [mobileMenuOpen]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -69,22 +81,47 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <span className="font-bold text-base text-white tracking-tight">SocialPush</span>
         </div>
         <button
+          type="button"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-          aria-label="Toggle Navigation"
+          aria-label={mobileMenuOpen ? 'Close navigation' : 'Open navigation'}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="dashboard-sidebar"
         >
           {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
       </div>
 
       {/* Sidebar */}
+      {/* Desktop: sticky, full viewport height with its own scroll, so the column never ends before the page does.
+          Mobile: a full-screen overlay with its own close button. */}
       <aside
+        id="dashboard-sidebar"
+        aria-label="Main navigation"
         className={`${
-          mobileMenuOpen ? 'fixed inset-0 z-40 bg-[#0e1322] flex' : 'hidden'
-        } md:flex w-full md:w-64 bg-[#0d121f] border-r border-slate-800/80 flex-col min-h-screen md:sticky md:top-0 md:h-screen z-20`}
+          mobileMenuOpen ? 'fixed inset-0 z-40 flex' : 'hidden'
+        } md:flex w-full md:w-64 shrink-0 bg-[#0d121f] border-r border-slate-800/80 flex-col h-dvh md:sticky md:top-0 md:self-start md:h-screen md:z-20 overflow-hidden`}
       >
+        {/* Mobile menu header with close button (the page header sits underneath the overlay) */}
+        <div className="md:hidden flex items-center justify-between px-5 py-3.5 border-b border-slate-800/80 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-xs">
+              <Zap className="w-3.5 h-3.5 fill-white" />
+            </div>
+            <span className="font-bold text-base text-white tracking-tight">SocialPush</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(false)}
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close navigation"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
         {/* Brand */}
-        <div className="h-16 hidden md:flex items-center px-5 border-b border-slate-800/80">
+        <div className="h-16 hidden md:flex items-center px-5 border-b border-slate-800/80 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-xs">
               <Zap className="w-3.5 h-3.5 fill-white" />
@@ -97,7 +134,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto custom-scrollbar">
+        <nav className="flex-1 min-h-0 py-4 px-3 space-y-1 overflow-y-auto custom-scrollbar">
           <div className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
             Workspace
           </div>
@@ -111,6 +148,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileMenuOpen(false)}
+                aria-current={isActive ? 'page' : undefined}
                 className={`group relative flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
                   isActive
                     ? 'bg-slate-800 text-white font-semibold'
@@ -127,7 +165,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 </div>
 
                 {item.badge && (
-                  <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-indigo-500/15 text-indigo-400 border border-indigo-500/20">
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 leading-none rounded bg-indigo-500/15 text-indigo-400 border border-indigo-500/20">
                     {item.badge}
                   </span>
                 )}
@@ -141,7 +179,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Sidebar Footer User / Logout */}
-        <div className="p-3.5 border-t border-slate-800/80 bg-[#090d16]/80">
+        <div className="p-3.5 border-t border-slate-800/80 bg-[#090d16]/80 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 text-[11px] font-bold uppercase shrink-0">
@@ -153,9 +191,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
             <button
+              type="button"
               onClick={handleLogout}
               className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
-              title="Sign Out"
+              title="Sign out"
+              aria-label="Sign out"
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>
@@ -166,15 +206,16 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar */}
-        <header className="h-14 bg-[#0d121f] border-b border-slate-800/80 px-6 sm:px-8 flex justify-between items-center sticky top-0 z-20">
-          <div className="flex items-center gap-2.5">
+        <header className="h-14 bg-[#0d121f] border-b border-slate-800/80 px-4 sm:px-8 flex justify-between items-center gap-3 md:sticky md:top-0 z-20">
+          <div className="flex items-center gap-2.5 min-w-0">
             {teams.length > 0 && (
-              <div className="relative flex items-center">
+              <div className="relative flex items-center min-w-0">
                 <div className="absolute left-2.5 pointer-events-none text-slate-400">
                   <Building2 className="w-3.5 h-3.5" />
                 </div>
                 <select
-                  className="appearance-none pl-8 pr-7 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-medium text-slate-200 hover:border-slate-700 focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+                  aria-label="Active team"
+                  className="appearance-none max-w-[60vw] sm:max-w-xs truncate pl-8 pr-7 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs font-medium text-slate-200 hover:border-slate-700 focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
                   value={activeTeam?.id || ''}
                   onChange={(e) => setActiveTeam(teams.find((t) => t.id === e.target.value) || null)}
                 >
@@ -189,7 +230,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             )}
             {activeTeam && (
               <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
-                {activeTeam.plan}
+                {activeTeam.plan || 'free'}
               </span>
             )}
           </div>
@@ -197,6 +238,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <NotificationBell notifications={notifications} onMarkRead={markNotificationsRead} />
             <button
+              type="button"
               onClick={handleLogout}
               className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors px-2.5 py-1.5 rounded-lg"
             >
@@ -207,7 +249,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-5 sm:p-7 overflow-y-auto">
+        <main className="flex-1 p-4 sm:p-7">
           <div className="max-w-6xl mx-auto">
             {children}
           </div>

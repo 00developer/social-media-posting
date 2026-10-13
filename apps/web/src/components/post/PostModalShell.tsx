@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
+import { useFocusTrap } from '@/components/ui/useFocusTrap';
 
 type PostModalShellProps = {
   onClose: () => void;
@@ -14,18 +15,20 @@ type PostModalShellProps = {
 };
 
 // Overlay + dialog panel shared by the create and edit post modals: closes on Esc / backdrop / X,
-// locks background scroll, moves focus into the dialog and restores it on close.
+// locks background scroll, traps Tab focus inside the dialog and restores focus on close.
 export function PostModalShell({ onClose, isBusy, ariaLabel, children }: PostModalShellProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Declared first so it records the element focused before the dialog opened (restored on close);
+  // Tab / Shift+Tab then cycle through the dialog's controls only.
+  useFocusTrap(panelRef, true, { autoFocus: false });
+
   useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     panelRef.current?.focus();
     return () => {
       document.body.style.overflow = previousOverflow;
-      previouslyFocused?.focus?.();
     };
   }, []);
 

@@ -4,6 +4,10 @@ import { useState } from 'react';
 import { useDashboard, type Team } from '@/components/DashboardProvider';
 import { TEAM_SERVICE_URL } from '@/lib/apiUrls';
 import { authHeader } from '@/lib/supabase';
+import { useConfirm, useToast } from '@/components/ui/Toast';
+import { Spinner } from '@/components/ui/Dialog';
+
+const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
 async function updateTeamSettings(teamId: string, updates: { name?: string; aiAutoReplyEnabled?: boolean }) {
   const res = await fetch(`${TEAM_SERVICE_URL}/api/v1/teams/${teamId}/settings`, {
@@ -20,6 +24,7 @@ async function updateTeamSettings(teamId: string, updates: { name?: string; aiAu
 function TeamNameEditor({ team, userId, fetchUserTeams }: { team: Team; userId: string; fetchUserTeams: (userId: string) => Promise<void> }) {
   const [teamNameInput, setTeamNameInput] = useState(team.name || '');
   const [savingName, setSavingName] = useState(false);
+  const toast = useToast();
 
   const handleRenameTeam = async () => {
     const newName = teamNameInput.trim();
@@ -32,29 +37,34 @@ function TeamNameEditor({ team, userId, fetchUserTeams }: { team: Team; userId: 
       // through the backend - the same path Invite and Billing already use - sidesteps that entirely.
       await updateTeamSettings(team.id, { name: newName });
       await fetchUserTeams(userId);
+      toast.success('Team renamed.');
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Error renaming team');
+      toast.error(e instanceof Error ? e.message : 'Error renaming team');
     } finally {
       setSavingName(false);
     }
   };
 
   return (
-    <div className="flex gap-2.5">
+    <form className="flex flex-col sm:flex-row gap-2.5" onSubmit={(e) => { e.preventDefault(); void handleRenameTeam(); }}>
+      <label htmlFor="team-name" className="sr-only">Team name</label>
       <input
+        id="team-name"
         type="text"
         value={teamNameInput}
         onChange={e => setTeamNameInput(e.target.value)}
         className="rounded-xl border border-slate-700 bg-slate-900/90 px-3.5 py-2 text-sm text-white placeholder-slate-500 flex-1 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
       />
       <button
-        onClick={handleRenameTeam}
+        type="submit"
         disabled={savingName || !teamNameInput.trim() || teamNameInput.trim() === team.name}
-        className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-semibold text-white transition-all disabled:opacity-50"
+        aria-busy={savingName}
+        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-semibold text-white transition-all disabled:opacity-50"
       >
+        {savingName && <Spinner />}
         {savingName ? 'Saving...' : 'Save'}
       </button>
-    </div>
+    </form>
   );
 }
 
@@ -64,6 +74,12 @@ export default function SettingsPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
   const [savingAutoReply, setSavingAutoReply] = useState(false);
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
+  const planLabel = `${(activeTeam?.plan || 'free').toUpperCase()} PLAN`;
 
   const handleToggleAutoReply = async (enabled: boolean) => {
     if (!activeTeam || !user) return;
@@ -73,65 +89,86 @@ export default function SettingsPage() {
       await updateTeamSettings(activeTeam.id, { aiAutoReplyEnabled: enabled });
       await fetchUserTeams(user.id);
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Error updating the AI auto-reply setting');
+      toast.error(e instanceof Error ? e.message : 'Error updating the AI auto-reply setting');
     } finally {
       setSavingAutoReply(false);
     }
   };
 
   const handleInvite = async () => {
-    if (!inviteEmail || !user || !activeTeam) return;
+    if (!user || !activeTeam || inviting) return;
+    const email = inviteEmail.trim();
+    if (!isValidEmail(email)) {
+      setInviteError('Enter a valid email address (e.g. teammate@example.com).');
+      return;
+    }
+    setInviteError(null);
+    setInviting(true);
     try {
       const res = await fetch(`${TEAM_SERVICE_URL}/api/v1/teams/${activeTeam.id}/invite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole })
+        body: JSON.stringify({ email, role: inviteRole })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.success) {
-        alert('Invited successfully');
+        toast.success(`Invited ${email} as ${inviteRole}.`);
         setInviteEmail('');
       } else {
-        alert(data.error);
+        setInviteError(data.error || `Could not send the invite (${res.status}).`);
       }
     } catch(e) {
       console.error(e);
-      alert('Error inviting member');
+      toast.error('Error inviting member');
+    } finally {
+      setInviting(false);
     }
   };
 
   const handleBilling = async (newPlan: string) => {
-    if (!user || !activeTeam) return;
+    if (!user || !activeTeam || billingBusy) return;
+    if (newPlan === 'free') {
+      const ok = await confirm({
+        title: 'Downgrade to the Free plan?',
+        description: 'Your team loses Pro features at once. You can upgrade again at any time.',
+        confirmLabel: 'Downgrade',
+        destructive: true,
+      });
+      if (!ok) return;
+    }
+    setBillingBusy(true);
     try {
       const res = await fetch(`${TEAM_SERVICE_URL}/api/v1/teams/${activeTeam.id}/billing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({ plan: newPlan })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.success) {
-        fetchUserTeams(user.id);
-        alert('Plan updated!');
+        await fetchUserTeams(user.id);
+        toast.success(newPlan === 'free' ? 'Plan changed to Free.' : 'Plan upgraded to Pro.');
       } else {
-        alert(data.error);
+        toast.error(data.error || 'Could not update the plan.');
       }
     } catch(e) {
       console.error(e);
-      alert('Error updating billing');
+      toast.error('Error updating billing');
+    } finally {
+      setBillingBusy(false);
     }
   };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-12">
       {/* Team Settings / Billing */}
-      <div className="rounded-2xl border border-slate-800 bg-[#0D131F] p-6 shadow-sm">
-        <div className="flex justify-between items-center mb-6">
+      <div className="rounded-2xl border border-slate-800 bg-[#0D131F] p-4 sm:p-6 shadow-sm">
+        <div className="flex flex-wrap justify-between items-start gap-3 mb-6">
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">Team Settings</h2>
             <p className="text-sm text-slate-400 mt-1">Manage team preferences, members, and subscription.</p>
           </div>
           <span className="text-xs font-semibold uppercase px-2.5 py-1 bg-indigo-950/60 border border-indigo-800/50 text-indigo-400 rounded-full">
-            {activeTeam?.plan} PLAN
+            {planLabel}
           </span>
         </div>
 
@@ -149,30 +186,43 @@ export default function SettingsPage() {
         {['owner', 'admin'].includes(activeTeam?.role as string) ? (
           <div className="mb-8">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Invite Member</h3>
-            <div className="flex gap-2.5">
-              <input 
-                type="email" 
-                placeholder="Email address" 
-                value={inviteEmail} 
-                onChange={e => setInviteEmail(e.target.value)} 
-                className="rounded-xl border border-slate-700 bg-slate-900/90 px-3.5 py-2 text-sm text-white placeholder-slate-500 flex-1 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" 
+            <form className="flex flex-col sm:flex-row gap-2.5" noValidate onSubmit={(e) => { e.preventDefault(); void handleInvite(); }}>
+              <label htmlFor="invite-email" className="sr-only">Email address</label>
+              <input
+                id="invite-email"
+                type="email"
+                autoComplete="off"
+                placeholder="Email address"
+                value={inviteEmail}
+                onChange={e => { setInviteEmail(e.target.value); if (inviteError) setInviteError(null); }}
+                disabled={inviting}
+                aria-invalid={!!inviteError}
+                aria-describedby={inviteError ? 'invite-error' : undefined}
+                className={`min-w-0 rounded-xl border bg-slate-900/90 px-3.5 py-2 text-sm text-white placeholder-slate-500 flex-1 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${inviteError ? 'border-rose-500/70' : 'border-slate-700'}`}
               />
-              <select 
-                value={inviteRole} 
-                onChange={e => setInviteRole(e.target.value)} 
+              <label htmlFor="invite-role" className="sr-only">Role</label>
+              <select
+                id="invite-role"
+                value={inviteRole}
+                onChange={e => setInviteRole(e.target.value)}
+                disabled={inviting}
                 className="rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-sm font-medium text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               >
                 <option value="admin">Admin</option>
                 <option value="editor">Editor</option>
                 <option value="viewer">Viewer</option>
               </select>
-              <button 
-                onClick={handleInvite} 
-                className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-semibold text-white transition-all"
+              <button
+                type="submit"
+                disabled={inviting || !inviteEmail.trim()}
+                aria-busy={inviting}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-semibold text-white transition-all disabled:opacity-50"
               >
-                Invite
+                {inviting && <Spinner />}
+                {inviting ? 'Inviting...' : 'Invite'}
               </button>
-            </div>
+            </form>
+            {inviteError && <p id="invite-error" role="alert" className="mt-2 text-xs font-medium text-rose-400">{inviteError}</p>}
           </div>
         ) : (
           <p className="text-sm text-slate-400 mb-6">You do not have permission to invite new members to this team.</p>
@@ -184,19 +234,27 @@ export default function SettingsPage() {
           <div className="mb-8">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Billing</h3>
             <p className="text-sm text-slate-400 mb-4">Manage your team&apos;s subscription plan.</p>
-            {activeTeam?.plan === 'free' ? (
-              <button 
-                onClick={() => handleBilling('pro')} 
-                className="rounded-xl bg-amber-600 hover:bg-amber-500 px-5 py-2.5 text-xs font-semibold text-white transition-all"
+            {(activeTeam?.plan || 'free') === 'free' ? (
+              <button
+                type="button"
+                onClick={() => handleBilling('pro')}
+                disabled={billingBusy}
+                aria-busy={billingBusy}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-5 py-2.5 text-xs font-semibold text-white transition-all disabled:opacity-50"
               >
-                Upgrade to Pro Plan
+                {billingBusy && <Spinner />}
+                {billingBusy ? 'Upgrading...' : 'Upgrade to Pro Plan'}
               </button>
             ) : (
-              <button 
-                onClick={() => handleBilling('free')} 
-                className="rounded-xl border border-slate-700 bg-slate-800 px-6 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-700 transition-all"
+              <button
+                type="button"
+                onClick={() => handleBilling('free')}
+                disabled={billingBusy}
+                aria-busy={billingBusy}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-6 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-700 transition-all disabled:opacity-50"
               >
-                Downgrade to Free Plan
+                {billingBusy && <Spinner />}
+                {billingBusy ? 'Updating...' : 'Downgrade to Free Plan'}
               </button>
             )}
           </div>
@@ -224,6 +282,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 role="switch"
+                aria-label="Auto-send AI replies"
                 aria-checked={!!activeTeam?.ai_auto_reply_enabled}
                 onClick={() => handleToggleAutoReply(!activeTeam?.ai_auto_reply_enabled)}
                 disabled={savingAutoReply}

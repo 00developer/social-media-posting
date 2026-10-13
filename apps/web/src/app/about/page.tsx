@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { LegalPage, BRAND, CONTACT_EMAIL } from '@/components/LegalPage';
 
 export const metadata: Metadata = {
-  title: `${BRAND} - Write once, publish everywhere`,
+  title: { absolute: `${BRAND} — Write once, publish everywhere` },
   description: `${BRAND} is a social media scheduling and publishing tool for Facebook, Instagram, Threads, YouTube, LinkedIn and Pinterest.`,
 };
 

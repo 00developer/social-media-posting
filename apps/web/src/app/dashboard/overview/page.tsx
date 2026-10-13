@@ -9,6 +9,10 @@ import { formatCount } from '@/lib/analyticsMetrics';
 import { isPostFailed } from '@/lib/postRetry';
 import { deriveCalendarStatus, getPostStart } from '@/lib/calendarStatus';
 import { buildThreads, filterThreads, type CommentRow } from '@/lib/commentThreads';
+import { buildDailySeries, getSystemStatus, sparklinePath } from '@/lib/overviewStats';
+import { isVideoUrl, parseMediaMap } from '@/lib/calendarEdit';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
+import { VideoPlayer } from '@/components/post/PlatformPreviewCard';
 import {
   Eye,
   Heart,
@@ -121,10 +125,12 @@ const ALL_PLATFORMS = [
 
 const RANGE_DAYS = 30;
 
-/* Clean, crisp minimal sparkline matching Linear / Stripe design */
-function MetricSparkline({ color, id }: { color: string; id: string }) {
+/* Minimal sparkline drawn from real per-day totals (see buildDailySeries); nothing is drawn without data. */
+function MetricSparkline({ color, id, values }: { color: string; id: string; values: number[] | null }) {
+  if (!values) return <div className="h-6 mt-2.5" aria-hidden="true" />;
+  const line = sparklinePath(values, 100, 24);
   return (
-    <div className="relative h-6 w-full mt-2.5 overflow-hidden pointer-events-none">
+    <div className="relative h-6 w-full mt-2.5 overflow-hidden pointer-events-none" aria-hidden="true">
       <svg className="w-full h-full" viewBox="0 0 100 24" preserveAspectRatio="none" fill="none">
         <defs>
           <linearGradient id={`spark-grad-${id}`} x1="0" y1="0" x2="0" y2="1">
@@ -132,14 +138,15 @@ function MetricSparkline({ color, id }: { color: string; id: string }) {
             <stop offset="100%" stopColor={color} stopOpacity="0.0" />
           </linearGradient>
         </defs>
-        <path d="M0,18 Q20,10 40,14 T75,9 T100,5 L100,24 L0,24 Z" fill={`url(#spark-grad-${id})`} />
+        <path d={`${line} L100,24 L0,24 Z`} fill={`url(#spark-grad-${id})`} />
         <path
-          d="M0,18 Q20,10 40,14 T75,9 T100,5"
+          d={line}
           fill="none"
           stroke={color}
           strokeWidth="1.75"
           strokeLinecap="round"
           strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
         />
       </svg>
     </div>
@@ -150,7 +157,8 @@ export default function OverviewPage() {
   const { user, activeTeam, posts, analytics, accounts } = useDashboard();
   const [commentRows, setCommentRows] = useState<CommentRow[]>([]);
   const [commentsLoaded, setCommentsLoaded] = useState(false);
-  const [aiUsage, setAiUsage] = useState<number | null>(null);
+  // null = loading, 'error' = could not be read (table missing / RLS) - shown as a dash, never as an error.
+  const [aiUsage, setAiUsage] = useState<number | 'error' | null>(null);
 
   // Pure stable timestamp initialized once per mount to comply with React 19 render purity rules
   const [mountTimestamp] = useState(() => Date.now());
@@ -179,23 +187,52 @@ export default function OverviewPage() {
     if (!activeTeam) return;
     let cancelled = false;
     (async () => {
-      const { count, error } = await supabase
-        .from('post_versions')
-        .select('id', { count: 'exact', head: true })
-        .eq('team_id', activeTeam.id);
-      if (!cancelled && !error) setAiUsage(count ?? 0);
+      // One ai_usage row per AI generation (caption / classify / reply); count this calendar month's.
+      const now = new Date(mountTimestamp);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      try {
+        const { count, error } = await supabase
+          .from('ai_usage')
+          .select('id', { count: 'exact', head: true })
+          .eq('team_id', activeTeam.id)
+          .gte('created_at', monthStart);
+        if (!cancelled) setAiUsage(error ? 'error' : count ?? 0);
+      } catch {
+        if (!cancelled) setAiUsage('error');
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeTeam]);
+  }, [activeTeam, mountTimestamp]);
 
   const allRows = useMemo(() => buildReportRows(analytics as unknown as StatRow[], posts), [analytics, posts]);
   const recentRows = useMemo(() => filterRows(allRows, { sinceMs: mountTimestamp - RANGE_DAYS * 86400000 }), [allRows, mountTimestamp]);
   const summary = useMemo(() => summarize(recentRows), [recentRows]);
   const best = useMemo(() => bestRow(recentRows), [recentRows]);
+  const sparks = useMemo(() => ({
+    views: buildDailySeries(recentRows, 'views', mountTimestamp, RANGE_DAYS),
+    likes: buildDailySeries(recentRows, 'likes', mountTimestamp, RANGE_DAYS),
+    comments: buildDailySeries(recentRows, 'comments', mountTimestamp, RANGE_DAYS),
+    shares: buildDailySeries(recentRows, 'shares', mountTimestamp, RANGE_DAYS),
+  }), [recentRows, mountTimestamp]);
+  const bestMedia = useMemo(() => {
+    if (!best) return null;
+    const post = posts.find((p) => p.id === best.postId);
+    const map = parseMediaMap(post?.media_url);
+    const raw = map[best.platform] ?? Object.values(map)[0];
+    if (!raw) return null;
+    const url = resolveMediaUrl(raw);
+    return { url, isVideo: isVideoUrl(url) };
+  }, [best, posts]);
 
   const failedPosts = useMemo(() => posts.filter((p) => isPostFailed(p)), [posts]);
+  const systemStatus = getSystemStatus(failedPosts.length);
+  const statusStyles = {
+    ok: { badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', dot: 'bg-emerald-400' },
+    warn: { badge: 'bg-amber-500/10 text-amber-300 border-amber-500/25', dot: 'bg-amber-400' },
+    error: { badge: 'bg-rose-500/10 text-rose-300 border-rose-500/30', dot: 'bg-rose-400' },
+  }[systemStatus.tone];
 
   const upcoming = useMemo(() => {
     return posts
@@ -246,10 +283,21 @@ export default function OverviewPage() {
                 {greetingData.dateFormatted}
               </span>
               <span className="text-slate-600">•</span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                All systems normal
-              </span>
+              {systemStatus.tone === 'ok' ? (
+                <span role="status" className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border ${statusStyles.badge}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${statusStyles.dot}`} />
+                  {systemStatus.label}
+                </span>
+              ) : (
+                <Link
+                  href="/dashboard/posts"
+                  role="status"
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border hover:brightness-125 transition ${statusStyles.badge}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${statusStyles.dot}`} />
+                  {systemStatus.label}
+                </Link>
+              )}
               <span className="text-slate-600">•</span>
               <span className="text-slate-400">
                 Workspace: <span className="text-white font-medium">{activeTeam?.name || 'Default Workspace'}</span>
@@ -258,7 +306,7 @@ export default function OverviewPage() {
           </div>
 
           {/* Quick Action CTAs */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
             <Link
               href="/dashboard/accounts"
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium text-slate-300 bg-slate-800/60 hover:bg-slate-800 border border-slate-700/80 transition-colors shadow-xs"
@@ -289,7 +337,7 @@ export default function OverviewPage() {
           <div className="mt-2 text-2xl sm:text-3xl font-bold text-white tracking-tight">
             {formatCount(summary.views)}
           </div>
-          <MetricSparkline color="#6366f1" id="views" />
+          <MetricSparkline color="#6366f1" id="views" values={sparks.views} />
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
             <span>Last 30 days</span>
             <span className="text-indigo-400 font-medium">Recorded</span>
@@ -305,7 +353,7 @@ export default function OverviewPage() {
           <div className="mt-2 text-2xl sm:text-3xl font-bold text-white tracking-tight">
             {formatCount(summary.likes)}
           </div>
-          <MetricSparkline color="#f43f5e" id="likes" />
+          <MetricSparkline color="#f43f5e" id="likes" values={sparks.likes} />
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
             <span>Reactions</span>
             <span className="text-rose-400 font-medium">Audience</span>
@@ -321,7 +369,7 @@ export default function OverviewPage() {
           <div className="mt-2 text-2xl sm:text-3xl font-bold text-white tracking-tight">
             {formatCount(summary.comments)}
           </div>
-          <MetricSparkline color="#f59e0b" id="comments" />
+          <MetricSparkline color="#f59e0b" id="comments" values={sparks.comments} />
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
             <span>Conversations</span>
             <span className="text-amber-400 font-medium">Activity</span>
@@ -337,7 +385,7 @@ export default function OverviewPage() {
           <div className="mt-2 text-2xl sm:text-3xl font-bold text-white tracking-tight">
             {formatCount(summary.shares)}
           </div>
-          <MetricSparkline color="#10b981" id="shares" />
+          <MetricSparkline color="#10b981" id="shares" values={sparks.shares} />
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
             <span>Amplification</span>
             <span className="text-emerald-400 font-medium">Network</span>
@@ -517,7 +565,7 @@ export default function OverviewPage() {
                 </p>
                 <Link
                   href="/dashboard/posts"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-slate-900 text-xs font-semibold transition-colors shadow-xs"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-xs"
                 >
                   <PenSquare className="w-3.5 h-3.5" />
                   <span>Schedule a Post</span>
@@ -585,13 +633,13 @@ export default function OverviewPage() {
             </div>
 
             {/* 8 Channel Badges */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {ALL_PLATFORMS.map((p) => {
                 const isConnected = connectedPlatformIds.includes(p.id);
                 return (
                   <div
                     key={p.id}
-                    className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ${
+                    className={`flex min-w-0 items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-colors ${
                       isConnected
                         ? 'bg-slate-900 border-slate-700/80'
                         : 'bg-slate-900/30 border-slate-800/60 opacity-60'
@@ -601,13 +649,13 @@ export default function OverviewPage() {
                       {p.icon}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-slate-200 truncate leading-none">{p.name}</p>
+                      <p className="text-xs font-medium text-slate-200 leading-none whitespace-nowrap">{p.name}</p>
                       <div className="flex items-center gap-1 mt-1">
                         <span
                           className={`w-1.5 h-1.5 rounded-full shrink-0 ${isConnected ? 'bg-emerald-400' : 'bg-slate-600'}`}
                         />
-                        <span className="text-[9px] font-medium text-slate-400">
-                          {isConnected ? 'Active' : 'Offline'}
+                        <span className="text-[10px] font-medium text-slate-400">
+                          {isConnected ? 'Active' : 'Not connected'}
                         </span>
                       </div>
                     </div>
@@ -649,9 +697,21 @@ export default function OverviewPage() {
                   Top Reach
                 </span>
               </div>
-              <p className="line-clamp-2 text-xs text-slate-200 leading-relaxed italic">
-                &ldquo;{best.caption || '(Post visual content)'}&rdquo;
-              </p>
+              <div className="flex items-start gap-3">
+                {bestMedia && (
+                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
+                    {bestMedia.isVideo ? (
+                      <VideoPlayer src={bestMedia.url} className="h-full w-full object-cover" />
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={bestMedia.url} alt="" className="h-full w-full object-cover" />
+                    )}
+                  </div>
+                )}
+                <p className="min-w-0 line-clamp-2 text-xs text-slate-200 leading-relaxed italic">
+                  &ldquo;{best.caption || '(Post visual content)'}&rdquo;
+                </p>
+              </div>
               <div className="mt-3 flex items-center justify-between text-[11px] pt-2 border-t border-slate-800">
                 <span className="text-slate-400">Engagement:</span>
                 <span className="text-white font-semibold">
@@ -691,14 +751,16 @@ export default function OverviewPage() {
           <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
             <div className="flex items-baseline justify-between mb-1">
               <span className="text-2xl font-bold text-white tracking-tight">
-                {aiUsage === null ? '...' : formatCount(aiUsage)}
+                {aiUsage === null ? (
+                  <span className="inline-block h-6 w-10 rounded bg-slate-800 animate-pulse align-middle" aria-label="Loading" />
+                ) : aiUsage === 'error' ? '—' : formatCount(aiUsage)}
               </span>
               <span className="text-[10px] font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
                 Generations
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mb-3">
-              Captions, hashtag variations, and sentiment evaluations saved this cycle.
+              Captions, comment classifications and reply suggestions generated this month.
             </p>
 
             <div className="flex items-center gap-2 pt-2 border-t border-slate-800">

@@ -130,11 +130,11 @@ function TeamCalendar({ userId, teamId, canCreate, refreshTimeline }: { userId: 
         throw err;
       }
     },
-    [userId, teamId]
+    [teamId]
   );
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] min-h-150 flex-col gap-4">
+    <div className="flex h-[calc(100dvh-8rem)] min-h-150 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-[#0D131F] px-4 py-3">
         <StatusLegend />
         <div className="flex items-center gap-3 text-xs text-slate-400">
@@ -160,7 +160,7 @@ function TeamCalendar({ userId, teamId, canCreate, refreshTimeline }: { userId: 
         </div>
       )}
 
-      <div className={`calendar-events-clickable min-h-0 flex-1 rounded-2xl border border-slate-800 bg-[#0D131F] p-5 shadow-sm ${canCreate ? 'calendar-creatable' : ''}`}>
+      <div className={`calendar-events-clickable min-h-0 flex-1 rounded-2xl border border-slate-800 bg-[#0D131F] p-2.5 sm:p-5 shadow-sm ${canCreate ? 'calendar-creatable' : ''}`}>
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}

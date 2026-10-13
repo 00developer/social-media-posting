@@ -48,13 +48,19 @@ export default function AnalyticsPage() {
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [historyReady, setHistoryReady] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  // "Now" for the date-range filter, kept in state (render must not read the clock); bumped on every refresh.
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const range = RANGES.find((r) => r.id === rangeId)!;
 
   // The analytics-service saves new numbers every few minutes, and nothing else tells this page about them, so
   // re-read the team data every minute while the tab is visible (and as soon as it becomes visible again).
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible') fetchTeamData(); };
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      setNowMs(Date.now());
+      fetchTeamData();
+    };
     const timer = setInterval(refresh, AUTO_REFRESH_MS);
     document.addEventListener('visibilitychange', refresh);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
@@ -81,7 +87,7 @@ export default function AnalyticsPage() {
 
   const allRows = useMemo(() => buildReportRows(analytics as unknown as StatRow[], posts), [analytics, posts]);
   const platformsWithStats = useMemo(() => [...new Set(allRows.map((r) => r.platform))], [allRows]);
-  const rangeStart = range.days === null ? null : Date.now() - range.days * 86400000;
+  const rangeStart = range.days === null ? null : nowMs - range.days * 86400000;
 
   const rows = useMemo(() => filterRows(allRows, { platform, sinceMs: rangeStart }), [allRows, platform, rangeStart]);
   const sorted = useMemo(() => sortRows(rows, sortKey, sortDir), [rows, sortKey, sortDir]);
@@ -127,16 +133,16 @@ export default function AnalyticsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <select value={rangeId} onChange={(e) => setRangeId(e.target.value as typeof rangeId)} className="rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-sm font-medium text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50" aria-label="Date range">
+          <select value={rangeId} onChange={(e) => { setNowMs(Date.now()); setRangeId(e.target.value as typeof rangeId); }} className="rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-sm font-medium text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50" aria-label="Date range">
             {RANGES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
           </select>
-          <button type="button" onClick={() => { fetchTeamData(); setRefreshTick((t) => t + 1); }} className="rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 hover:text-white transition-all shadow-sm">Refresh</button>
+          <button type="button" onClick={() => { setNowMs(Date.now()); fetchTeamData(); setRefreshTick((t) => t + 1); }} className="rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 hover:text-white transition-all shadow-sm">Refresh</button>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Platform">
         {['all', ...platformsWithStats].map((p) => (
-          <button key={p} type="button" onClick={() => setPlatform(p)}
+          <button key={p} type="button" onClick={() => setPlatform(p)} aria-pressed={platform === p}
             className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition-colors ${platform === p ? 'border-slate-700 bg-slate-800 text-white' : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
             {p === 'all' ? 'All platforms' : p}
           </button>
@@ -173,31 +179,37 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-800 bg-[#0d131f] p-6 shadow-xs">
+      <div className="rounded-2xl border border-slate-800 bg-[#0d131f] p-4 sm:p-6 shadow-xs">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-semibold text-white text-sm">Growth over time</h3>
-          <div className="flex gap-1.5" role="group" aria-label="Chart mode">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Chart mode">
             {([['gain', 'New since tracking'], ['total', 'Running total']] as const).map(([id, label]) => (
-              <button key={id} type="button" onClick={() => setChartMode(id)}
+              <button key={id} type="button" onClick={() => setChartMode(id)} aria-pressed={chartMode === id}
                 className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${chartMode === id ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
                 {label}
               </button>
             ))}
           </div>
-          <div className="flex gap-1.5">
-            {METRICS.map((m) => (
-              <button key={m.key} type="button" onClick={() => setChartMetric(m.key)}
-                title={availableMetrics.includes(m.key) ? undefined : 'This platform does not provide this number'}
-                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${chartMetric === m.key ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'} ${availableMetrics.includes(m.key) ? '' : 'opacity-40'}`}>
-                {m.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Metric">
+            {METRICS.map((m) => {
+              // With no stats at all there is nothing to disable against; otherwise grey out what this selection lacks.
+              const unavailable = availableMetrics.length > 0 && !availableMetrics.includes(m.key);
+              return (
+                <button key={m.key} type="button" onClick={() => setChartMetric(m.key)}
+                  disabled={unavailable}
+                  aria-pressed={chartMetric === m.key}
+                  title={unavailable ? 'This platform does not provide this number' : undefined}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${chartMetric === m.key ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 enabled:hover:bg-slate-800 enabled:hover:text-slate-200'}`}>
+                  {m.label}
+                </button>
+              );
+            })}
           </div>
         </div>
         {historyReady ? (
           <AnalyticsChart data={chart} metricLabel={METRICS.find((m) => m.key === chartMetric)!.label} mode={chartMode} />
         ) : (
-          <p className="py-10 text-center text-sm text-slate-400">Loading history...</p>
+          <p role="status" className="py-10 text-center text-sm text-slate-400">Loading history...</p>
         )}
       </div>
 

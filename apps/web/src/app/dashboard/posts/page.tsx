@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDashboard, type Post } from '@/components/DashboardProvider';
 import { VideoPlayer, PlatformPreviewCard } from '@/components/post/PlatformPreviewCard';
 import { getMediaFrame, getPostContentType } from '@/lib/mediaFrame';
@@ -9,6 +9,9 @@ import { getPostStart } from '@/lib/calendarStatus';
 import { getFailedPlatforms, getFailureLines, getRetryNotes, isPostFailed, retryButtonLabel, retryFailedPost } from '@/lib/postRetry';
 import { POST_SERVICE_URL, SCHEDULING_SERVICE_URL } from '@/lib/apiUrls';
 import { authHeader } from '@/lib/supabase';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
+import { useConfirm, useToast } from '@/components/ui/Toast';
+import { PlatformPickerDialog } from '@/components/post/PlatformPickerDialog';
 import {
   RotateCw,
   Send,
@@ -44,9 +47,16 @@ function cleanErrorMessage(raw: string): { summary: string; detail?: string } {
 }
 
 export default function PostsPage() {
-  const { user, activeTeam, posts, fetchTeamData } = useDashboard();
-  
-  const [isPublishing, setIsPublishing] = useState(false);
+  const { user, activeTeam, posts, accounts, fetchTeamData, dataLoaded } = useDashboard();
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  // Per-post flags, so only the card being acted on shows "Publishing..." / "Deleting...".
+  const [publishingPostId, setPublishingPostId] = useState<string | null>(null);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  // A draft with no platform attached: ask which platforms to publish to (replaces the old prompt()).
+  const [pickerFor, setPickerFor] = useState<{ postId: string; contentType: 'post' | 'reel' } | null>(null);
+  const connectedPlatforms = useMemo(() => [...new Set(accounts.map((a) => a.platform).filter((p): p is string => !!p))], [accounts]);
   const [retryingPostId, setRetryingPostId] = useState<string | null>(null);
   const [previewPost, setPreviewPost] = useState<Post | null>(null);
   const [optimisticPost, setOptimisticPost] = useState<Partial<Post> | null>(null);
@@ -64,17 +74,9 @@ export default function PostsPage() {
     setExpandedErrors(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handlePublish = async (postId: string, presetPlatforms: string[] = [], postContentType: 'post' | 'reel' = 'post') => {
-    if (!user || !activeTeam) return;
-
-    let platforms = presetPlatforms;
-    if (!platforms || platforms.length === 0) {
-      const platformsStr = prompt("Enter platforms to publish to (comma separated, e.g. twitter,instagram):", "twitter");
-      if (!platformsStr) return;
-      platforms = platformsStr.split(',').map(p => p.trim().toLowerCase());
-    }
-    if (platforms.length === 0) return;
-    setIsPublishing(true);
+  const queuePublish = async (postId: string, platforms: string[], postContentType: 'post' | 'reel') => {
+    if (!user || !activeTeam || platforms.length === 0 || publishingPostId) return;
+    setPublishingPostId(postId);
     try {
       const res = await fetch(`${SCHEDULING_SERVICE_URL}/api/v1/schedules`, {
         method: 'POST',
@@ -87,43 +89,76 @@ export default function PostsPage() {
           contentType: postContentType
         })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.success) {
-        alert('Post queued for immediate publishing!');
+        toast.success('Post queued for immediate publishing.');
       } else {
-        alert('Failed to publish: ' + data.error);
+        toast.error(`Failed to publish: ${data.error || `request failed (${res.status})`}`);
       }
-      fetchTeamData();
+      await fetchTeamData();
     } catch {
-      alert('Error publishing post. Ensure Scheduling Service (port 3004) is running.');
+      toast.error('Error publishing post. Check that the scheduling service is running.');
+    } finally {
+      setPublishingPostId(null);
     }
-    setIsPublishing(false);
+  };
+
+  const handlePublish = (postId: string, presetPlatforms: string[] = [], postContentType: 'post' | 'reel' = 'post') => {
+    if (!user || !activeTeam || publishingPostId) return;
+    if (presetPlatforms.length === 0) {
+      setPickerFor({ postId, contentType: postContentType });
+      return;
+    }
+    void queuePublish(postId, presetPlatforms, postContentType);
   };
 
   const handleRetry = async (postId: string) => {
     if (!user || retryingPostId) return;
     setRetryingPostId(postId);
-    const result = await retryFailedPost(postId);
-    if (!result.ok) alert(result.error);
-    await fetchTeamData();
-    setRetryingPostId(null);
+    try {
+      const result = await retryFailedPost(postId);
+      if (!result.ok) toast.error(result.error);
+      else toast.success('Retry queued.');
+      await fetchTeamData();
+    } finally {
+      setRetryingPostId(null);
+    }
   };
 
   const handleDelete = async (postId: string) => {
-    if (!user || !activeTeam) return;
-    if (!confirm('Are you sure you want to delete this post?')) return;
+    if (!user || !activeTeam || deletingPostId) return;
+    const ok = await confirm({
+      title: 'Delete this post?',
+      description: 'The post and its schedules are removed from SocialPush. Posts already published on a platform stay there.',
+      confirmLabel: 'Delete post',
+      destructive: true,
+    });
+    if (!ok) return;
+    setDeletingPostId(postId);
     try {
       const res = await fetch(`${POST_SERVICE_URL}/api/v1/posts/${postId}?teamId=${activeTeam.id}`, { method: 'DELETE', headers: await authHeader() });
       if (res.ok) {
-        fetchTeamData();
+        if (previewPost?.id === postId) setPreviewPost(null);
+        toast.success('Post deleted.');
+        await fetchTeamData();
       } else {
-        const data = await res.json();
-        alert('Failed to delete: ' + data.error);
+        const data = await res.json().catch(() => ({}));
+        toast.error(`Failed to delete: ${data.error || `request failed (${res.status})`}`);
       }
     } catch {
-      alert('Error deleting post.');
+      toast.error('Error deleting post.');
+    } finally {
+      setDeletingPostId(null);
     }
   };
+
+  // Preview modal: close on Escape.
+  useEffect(() => {
+    if (!previewPost) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setPreviewPost(null); };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [previewPost]);
 
   const allPosts = optimisticPost ? [optimisticPost as Post, ...posts] : posts;
   const filteredPosts = allPosts.filter(p => {
@@ -251,8 +286,25 @@ export default function PostsPage() {
             ))}
           </div>
         </div>
-        
-        {filteredPosts.length === 0 ? (
+
+        {!dataLoaded && !optimisticPost ? (
+          <div className="space-y-4" aria-busy="true" aria-label="Loading posts">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="rounded-2xl border border-slate-800/80 border-l-4 border-l-slate-700 bg-[#0e1322]/90 p-5 animate-pulse">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="h-5 w-20 rounded-full bg-slate-800" />
+                  <div className="h-3 w-24 rounded bg-slate-800/70" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3 w-full rounded bg-slate-800/80" />
+                  <div className="h-3 w-5/6 rounded bg-slate-800/80" />
+                  <div className="h-3 w-2/3 rounded bg-slate-800/60" />
+                </div>
+              </div>
+            ))}
+            <span className="sr-only">Loading posts...</span>
+          </div>
+        ) : filteredPosts.length === 0 ? (
           <div className="bg-[#0e1322]/90 backdrop-blur-2xl rounded-3xl border border-slate-800/80 p-14 text-center shadow-xl">
             <div className="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center mx-auto mb-3 text-indigo-400 border border-indigo-500/20">
               <Inbox className="w-7 h-7" />
@@ -282,6 +334,10 @@ export default function PostsPage() {
               const failureLines = getFailureLines(post);
               const retryNotes = getRetryNotes(post);
               const retrying = retryingPostId === post.id;
+              const publishing = publishingPostId === post.id;
+              const deleting = deletingPostId === post.id;
+              const isViewer = activeTeam?.role === 'viewer';
+              const clickable = post.status !== 'uploading';
 
               const cardPlatforms = Array.from(new Set([
                 ...(post.schedules?.map(s => s.platform) || []),
@@ -299,10 +355,20 @@ export default function PostsPage() {
               return (
                 <div
                   key={post.id}
-                  onClick={() => post.status !== 'uploading' && setPreviewPost(post)}
-                  className={`bg-[#0e1322]/90 backdrop-blur-2xl rounded-2xl border border-slate-800/80 p-5 shadow-xl hover:border-slate-700 hover:-translate-y-0.5 transition-all duration-200 group ${borderAccent} ${
-                    post.status !== 'uploading' ? 'cursor-pointer' : ''
-                  } ${post.status === 'uploading' ? 'relative opacity-70 pointer-events-none' : ''}`}
+                  role={clickable ? 'button' : undefined}
+                  tabIndex={clickable ? 0 : undefined}
+                  aria-label={clickable ? `Preview post: ${(post.content || '').slice(0, 60) || 'media post'}` : undefined}
+                  onClick={() => clickable && setPreviewPost(post)}
+                  onKeyDown={(e) => {
+                    if (!clickable || e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setPreviewPost(post);
+                    }
+                  }}
+                  className={`relative bg-[#0e1322]/90 backdrop-blur-2xl rounded-2xl border border-slate-800/80 p-4 sm:p-5 shadow-xl hover:border-slate-700 hover:-translate-y-0.5 transition-all duration-200 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${borderAccent} ${
+                    clickable ? 'cursor-pointer' : 'opacity-70 pointer-events-none'
+                  }`}
                 >
                   {post.status === 'uploading' && (
                     <div className="absolute inset-0 flex items-center justify-center z-10 bg-[#090d16]/80 backdrop-blur-[2px] rounded-2xl">
@@ -314,8 +380,8 @@ export default function PostsPage() {
                   )}
 
                   {/* Header Row */}
-                  <div className="flex justify-between items-start mb-3 gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap justify-between items-start mb-3 gap-3">
+                    <div className="flex flex-wrap items-center gap-2 min-w-0">
                       {/* Status Badges */}
                       {post.status === 'published' && (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 shadow-[0_0_8px_rgba(16,185,129,0.2)]">
@@ -368,41 +434,48 @@ export default function PostsPage() {
                         </div>
                       )}
                     </div>
-                    
+
                     {/* Action Buttons */}
-                    <div className="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity">
                       {post.status === 'draft' && (
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             const isVideoMedia = !!(mediaObj && Object.values(mediaObj).some(url => typeof url === 'string' && (/\.(mp4|mov|webm|m4v)(\?.*)?$/i.test(url) || url.includes('/video'))));
                             const postContentType = (isVideoMedia || getPostContentType(post) === 'reel') ? 'reel' : 'post';
                             handlePublish(post.id, cardPlatforms, postContentType);
                           }}
-                          disabled={isPublishing || activeTeam?.role === 'viewer'}
-                          className="inline-flex items-center gap-1 bg-white text-slate-950 px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all disabled:opacity-50 shadow-md"
+                          disabled={!!publishingPostId || deleting || isViewer}
+                          aria-busy={publishing}
+                          className="inline-flex items-center gap-1.5 bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
                         >
-                          <Send className="w-3 h-3" />
-                          {isPublishing ? 'Publishing...' : 'Publish'}
+                          {publishing ? <RotateCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                          {publishing ? 'Publishing...' : 'Publish'}
                         </button>
                       )}
                       {failedPlatforms.length > 0 && (
                         <button
+                          type="button"
                           onClick={(e) => { e.stopPropagation(); handleRetry(post.id); }}
-                          disabled={retrying || !!retryingPostId || activeTeam?.role === 'viewer'}
+                          disabled={retrying || !!retryingPostId || deleting || isViewer}
+                          aria-busy={retrying}
                           className="inline-flex items-center gap-1.5 bg-rose-600 text-white px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-rose-500 transition-all disabled:opacity-50 shadow-sm shadow-rose-600/30"
                         >
                           <RotateCw className={`w-3.5 h-3.5 ${retrying ? 'animate-spin' : ''}`} />
                           {retryButtonLabel(failedPlatforms.length, retrying)}
                         </button>
                       )}
-                      <button 
+                      <button
+                        type="button"
                         onClick={(e) => { e.stopPropagation(); handleDelete(post.id); }}
-                        disabled={activeTeam?.role === 'viewer'}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
-                        title="Delete post"
+                        disabled={isViewer || deleting || publishing || retrying}
+                        aria-busy={deleting}
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={deleting ? 'Deleting...' : 'Delete post'}
+                        aria-label={deleting ? 'Deleting post' : 'Delete post'}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        {deleting ? <RotateCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
@@ -425,6 +498,8 @@ export default function PostsPage() {
                                 </div>
                                 {errInfo.detail && (
                                   <button
+                                    type="button"
+                                    aria-expanded={isExpanded}
                                     onClick={(e) => toggleErrorExpand(e, errKey)}
                                     className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 underline shrink-0 flex items-center gap-0.5"
                                   >
@@ -456,20 +531,21 @@ export default function PostsPage() {
                       ))}
                     </div>
                   )}
-                  
+
                   {/* Post Content */}
                   <p className="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap mb-3.5 line-clamp-3">
                     {post.content}
                   </p>
-                  
+
                   {/* Media Strip */}
                   {mediaObj && (
                     <div className="flex gap-2 overflow-hidden h-24 rounded-xl bg-slate-900 border border-slate-800 p-2">
-                      {Object.entries(mediaObj).map(([platform, url]) => {
+                      {Object.entries(mediaObj).map(([platform, rawUrl]) => {
+                        const url = resolveMediaUrl(rawUrl);
                         const isVideo = typeof url === 'string' && (!!url.match(/\.(mp4|mov|webm)(\?.*)?$/i) || url.endsWith('#video'));
                         const frame = getMediaFrame(platform, isVideo, getPostContentType(post));
                         const mediaClass = frame.ratio ? `w-full h-full ${frame.fit === 'cover' ? 'object-cover' : 'object-contain'}` : 'h-full w-auto';
-                        
+
                         return (
                           <div
                             key={platform}
@@ -512,7 +588,19 @@ export default function PostsPage() {
           </div>
         )}
       </div>
-      
+
+      {pickerFor && (
+        <PlatformPickerDialog
+          connectedPlatforms={connectedPlatforms}
+          onCancel={() => setPickerFor(null)}
+          onConfirm={(platforms) => {
+            const target = pickerFor;
+            setPickerFor(null);
+            void queuePublish(target.postId, platforms, target.contentType);
+          }}
+        />
+      )}
+
       {/* Preview Modal */}
       {previewPost && (
         <div
@@ -520,11 +608,14 @@ export default function PostsPage() {
           onClick={() => setPreviewPost(null)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Post preview"
             className="bg-[#0e1322] rounded-3xl shadow-2xl border border-slate-800 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden text-slate-100"
             onClick={e => e.stopPropagation()}
           >
-            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-[#0e1322] z-10">
-              <div className="flex items-center gap-2.5">
+            <div className="px-4 sm:px-6 py-4 border-b border-slate-800 flex items-center justify-between gap-3 bg-[#0e1322] z-10">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
                   <Eye className="w-4 h-4" />
                 </div>
@@ -534,14 +625,17 @@ export default function PostsPage() {
                 </div>
               </div>
               <button
+                type="button"
+                autoFocus
                 onClick={() => setPreviewPost(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                aria-label="Close preview"
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
-            <div className="p-8 overflow-y-auto flex-1 bg-[#090d16] custom-scrollbar">
+
+            <div className="p-4 sm:p-8 overflow-y-auto flex-1 bg-[#090d16] custom-scrollbar">
               {(() => {
                 let mediaObj = null;
                 try {
@@ -553,7 +647,7 @@ export default function PostsPage() {
 
                 if (mediaObj) {
                   return (
-                    <div className="flex gap-8 justify-center flex-wrap">
+                    <div className="flex gap-6 sm:gap-8 justify-center flex-wrap">
                       {Object.entries(mediaObj).map(([platform, url]) => {
                         const isVideo = typeof url === 'string' && (!!url.match(/\.(mp4|mov|webm)(\?.*)?$/i) || url.endsWith('#video'));
                         return (
@@ -570,7 +664,7 @@ export default function PostsPage() {
                   );
                 } else {
                   return (
-                    <div className="max-w-2xl mx-auto bg-slate-900 p-8 rounded-2xl shadow-xl border border-slate-800">
+                    <div className="max-w-2xl mx-auto bg-slate-900 p-5 sm:p-8 rounded-2xl shadow-xl border border-slate-800">
                       <p className="text-slate-100 text-base whitespace-pre-wrap leading-relaxed">{previewPost.content}</p>
                     </div>
                   );

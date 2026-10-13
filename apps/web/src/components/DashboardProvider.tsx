@@ -18,6 +18,8 @@ export type AppAnalytics = { id: string; platform?: string; views?: number; like
 interface DashboardContextType {
   user: User | null;
   loading: boolean;
+  /** False until the first fetchTeamData for the active team has finished (posts / accounts / analytics are real). */
+  dataLoaded: boolean;
   teams: Team[];
   activeTeam: Team | null;
   setActiveTeam: React.Dispatch<React.SetStateAction<Team | null>>;
@@ -44,6 +46,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [analytics, setAnalytics] = useState<AppAnalytics[]>([]);
+  // Team whose data finished loading at least once; dataLoaded is derived from it so a team switch shows skeletons again.
+  const [loadedTeamId, setLoadedTeamId] = useState<string | null>(null);
   // Ids the user already read in this session. Applied on top of every fetch, so a notification stays read
   // even if the database update is refused (missing UPDATE policy) or a poll returns the old flag.
   const locallyRead = useRef<Set<string>>(new Set());
@@ -103,17 +107,24 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const fetchTeamData = useCallback(async () => {
     if (!activeTeam) return;
 
-    // The four reads are independent, so run them together instead of one round trip after another.
-    const [{ data: accountsData }, { data: postsData }, { data: notifData }, { data: analyticsData }] = await Promise.all([
-      supabase.from('social_accounts').select('*').eq('team_id', activeTeam.id),
-      supabase.from('posts').select('*, publish_jobs(*), schedules(*)').eq('team_id', activeTeam.id).order('created_at', { ascending: false }),
-      supabase.from('notifications').select('*').eq('user_id', user?.id).order('created_at', { ascending: false }).limit(NOTIFICATION_LIMIT),
-      supabase.from('analytics').select('*').eq('team_id', activeTeam.id),
-    ]);
-    if (accountsData) setAccounts(accountsData as SocialAccount[]);
-    if (postsData) setPosts(postsData as Post[]);
-    if (notifData) setNotifications(withLocalRead(notifData as AppNotification[]));
-    if (analyticsData) setAnalytics(analyticsData as AppAnalytics[]);
+    const teamId = activeTeam.id;
+    try {
+      // The four reads are independent, so run them together instead of one round trip after another.
+      const [{ data: accountsData }, { data: postsData }, { data: notifData }, { data: analyticsData }] = await Promise.all([
+        supabase.from('social_accounts').select('*').eq('team_id', teamId),
+        supabase.from('posts').select('*, publish_jobs(*), schedules(*)').eq('team_id', teamId).order('created_at', { ascending: false }),
+        supabase.from('notifications').select('*').eq('user_id', user?.id).order('created_at', { ascending: false }).limit(NOTIFICATION_LIMIT),
+        supabase.from('analytics').select('*').eq('team_id', teamId),
+      ]);
+      if (accountsData) setAccounts(accountsData as SocialAccount[]);
+      if (postsData) setPosts(postsData as Post[]);
+      if (notifData) setNotifications(withLocalRead(notifData as AppNotification[]));
+      if (analyticsData) setAnalytics(analyticsData as AppAnalytics[]);
+    } catch (err) {
+      console.error('Error loading team data:', err);
+    } finally {
+      setLoadedTeamId(teamId);
+    }
   }, [activeTeam, user?.id, withLocalRead]);
 
   // Notifications only (cheap): used by the poll below and after marking as read.
@@ -230,9 +241,12 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     };
   }, [user, fetchNotifications]);
 
+  const dataLoaded = activeTeam ? loadedTeamId === activeTeam.id : !loading;
+
   const value = {
     user,
     loading,
+    dataLoaded,
     teams,
     activeTeam,
     setActiveTeam,

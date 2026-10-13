@@ -33,6 +33,7 @@ export default function CommentsPage() {
   const { activeTeam, posts } = useDashboard();
   const [rows, setRows] = useState<CommentRow[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [platform, setPlatform] = useState('all');
   const [status, setStatus] = useState<(typeof STATUSES)[number]['id']>('all');
   const [postId, setPostId] = useState('all');
@@ -53,8 +54,12 @@ export default function CommentsPage() {
       .eq('team_id', activeTeam.id)
       .order('commented_at', { ascending: false })
       .limit(2000);
-    // The table is created by a migration; until then just show an empty inbox.
-    if (!err) setRows((data || []) as CommentRow[]);
+    if (err) {
+      setLoadError(err.message || 'Could not load comments.');
+    } else {
+      setRows((data || []) as CommentRow[]);
+      setLoadError(null);
+    }
     setLoaded(true);
   }, [activeTeam]);
 
@@ -99,6 +104,7 @@ export default function CommentsPage() {
   };
 
   const regenerate = async (t: Thread) => {
+    if (regenerating || sending) return;
     setRegenerating(true);
     setError(null);
     try {
@@ -115,7 +121,7 @@ export default function CommentsPage() {
 
   const send = async (thread: Thread) => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || sending || regenerating) return;
     // Reply to the latest comment from a reader (a reply to a reply), else to the top-level comment.
     const last = [...thread.replies].reverse().find((r) => !r.is_own);
     const target = last ?? thread.root;
@@ -140,7 +146,7 @@ export default function CommentsPage() {
           <h2 className="text-2xl font-extrabold text-white tracking-tight">Comments</h2>
           <p className="text-sm text-slate-400 mt-1">Read and answer comments from all your platforms without leaving SocialPush. {waiting > 0 ? <strong className="text-amber-400 font-semibold">{waiting} waiting for a reply.</strong> : ''}</p>
         </div>
-        <button type="button" onClick={refresh} disabled={refreshing} className="rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 hover:text-white transition-all shadow-sm disabled:opacity-50">
+        <button type="button" onClick={refresh} disabled={refreshing} aria-busy={refreshing} className="rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800 hover:text-white transition-all shadow-sm disabled:opacity-50">
           {refreshing ? 'Fetching...' : 'Refresh'}
         </button>
       </div>
@@ -156,9 +162,9 @@ export default function CommentsPage() {
           <option value="all">All posts</option>
           {postOptions.map((o) => <option key={o.id} value={o.id}>{o.label.slice(0, 50)}</option>)}
         </select>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Status filter">
           {STATUSES.map((s) => (
-            <button key={s.id} type="button" onClick={() => setStatus(s.id)}
+            <button key={s.id} type="button" onClick={() => setStatus(s.id)} aria-pressed={status === s.id}
               className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${status === s.id ? 'border-slate-700 bg-slate-800 text-white' : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
               {s.label}
             </button>
@@ -166,8 +172,25 @@ export default function CommentsPage() {
         </div>
       </div>
 
+      {loaded && loadError && rows.length > 0 && (
+        <div role="alert" className="rounded-xl border border-rose-500/30 bg-rose-950/30 px-4 py-2.5 text-sm text-rose-300">
+          Could not refresh comments: {loadError}. Showing the last loaded list.
+        </div>
+      )}
+
       {!loaded ? (
-        <p className="py-12 text-center text-sm text-slate-400">Loading comments...</p>
+        <p role="status" className="py-12 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+          <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+          Loading comments...
+        </p>
+      ) : loadError && rows.length === 0 ? (
+        <div role="alert" className="rounded-xl border border-rose-500/30 bg-rose-950/30 px-6 py-10 text-center">
+          <p className="text-sm font-semibold text-rose-200">Could not load comments</p>
+          <p className="mt-1 text-xs text-rose-300/80">{loadError}</p>
+          <button type="button" onClick={() => { setLoaded(false); void load(); }} className="mt-4 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 hover:text-white transition-colors">
+            Try again
+          </button>
+        </div>
       ) : visible.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-[#0d131f] px-6 py-12 text-center text-sm text-slate-400">
           {threads.length === 0
@@ -219,17 +242,17 @@ export default function CommentsPage() {
               {openId === t.root.id ? (
                 <div className="mt-4 space-y-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3.5">
                   {isAiDraft && <p className="text-xs font-medium text-violet-400">✨ AI-drafted reply - review and edit before sending.</p>}
-                  <textarea value={draft} onChange={(e) => { setDraft(e.target.value); setIsAiDraft(false); }} rows={3} autoFocus placeholder="Write your reply..."
+                  <textarea value={draft} onChange={(e) => { setDraft(e.target.value); setIsAiDraft(false); }} rows={3} autoFocus placeholder="Write your reply..." aria-label="Reply" disabled={sending}
                     className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
                   {error && <p className="text-sm text-rose-400">{error}</p>}
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => send(t)} disabled={sending || !draft.trim()} className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50 transition-all">
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => send(t)} disabled={sending || regenerating || !draft.trim()} aria-busy={sending} className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50 transition-all">
                       {sending ? 'Sending...' : 'Send reply'}
                     </button>
-                    <button type="button" onClick={() => regenerate(t)} disabled={regenerating} className="rounded-xl border border-indigo-500/30 bg-indigo-950/40 px-4 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-900/40 disabled:opacity-50 transition-all">
+                    <button type="button" onClick={() => regenerate(t)} disabled={regenerating || sending} aria-busy={regenerating} className="rounded-xl border border-indigo-500/30 bg-indigo-950/40 px-4 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-900/40 disabled:opacity-50 transition-all">
                       {regenerating ? 'Thinking...' : 'AI Suggest'}
                     </button>
-                    <button type="button" onClick={() => { setOpenId(null); setError(null); }} className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-all">Cancel</button>
+                    <button type="button" onClick={() => { setOpenId(null); setError(null); }} disabled={sending} className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-all">Cancel</button>
                   </div>
                 </div>
               ) : (

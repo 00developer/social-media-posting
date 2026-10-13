@@ -1,3 +1,39 @@
+# Bug Fixes & Progress Report (2026-10-13 - Part 2)
+
+## 1. YouTube 4MB Resumable Chunked Upload & Real-Time Logging (Commit `a698669`)
+- **Symptom:** YouTube uploads failed with `fetch failed (other side closed)` during multi-platform video publishing.
+- **Root Cause:**
+  1. `YouTubeAdapter` uploaded videos via a single monolithic `PUT` request without chunking or `Content-Range` headers.
+  2. For large 12–25 MB files, any transient socket hesitation caused Google's upload edge or Node's `undici` to terminate the TCP connection.
+  3. `recordPublishedPost` was not called in `YouTubeAdapter`, preventing published video tracking and idempotency recovery.
+- **Fix:**
+  - Implemented Google Resumable Upload standard 4MB chunking (`CHUNK_SIZE = 4 * 1024 * 1024`, 256 KB Google multiple) with `Content-Range: bytes START-END/TOTAL`.
+  - Added automatic committed byte offset recovery (`PUT bytes */TOTAL`) upon socket drops (`other side closed`).
+  - Added real-time terminal progress logging (`[YouTubeAdapter] Uploading video chunk: X/Y MB (Z%)`).
+  - Added immediate `recordPublishedPost` invocation once video ID is received.
+  - Documented Google's daily upload limit (`uploadLimitExceeded`) on test channels.
+
+## 2. Multi-Platform Video Upload 30-Second Staggering
+- **Symptom:** Pushing 4 simultaneous video uploads choked network bandwidth and triggered socket resets across Meta & Google APIs.
+- **Fix:** In `services/scheduling-service/src/index.ts`, introduced an automated 30-second stagger delay (`i * 30_000` ms) for multi-platform video jobs, giving each platform dedicated processing bandwidth.
+
+## 3. In-Memory Video Caching
+- **Symptom:** Every target platform redundantly downloaded 16–25 MB video files from Supabase storage, multiplying network traffic by 4x.
+- **Fix:** In `services/publishing-service/src/index.ts`, implemented `getMediaBuffer` with 10-minute in-memory caching and 3-attempt retry loop.
+
+## 4. Worker HTTP Keep-Alive & Socket Resilience
+- **Symptom:** Worker prematurely terminated HTTP calls to publishing-service during 30–90 second video processing with `fetch failed (other side closed)`.
+- **Fix:** Removed `'Connection': 'close'` from `services/worker/src/index.ts`, enabling persistent HTTP/1.1 keep-alive on localhost.
+
+## 5. UI Cleanup & Key Deduplication
+- **Symptom:** React console warnings for duplicate keys in NotificationBell and invalid SVG `<path>` syntax on Overview page.
+- **Fix:**
+  - In `NotificationBell.tsx` and `DashboardProvider.tsx`, deduplicated notifications by ID and composite keys (`${n.id}-${idx}`).
+  - Fixed Pinterest SVG path typo in `overview/page.tsx`.
+  - All 263 unit tests verified passing (`apps/web test`).
+
+---
+
 # Bug Fixes & Progress Report (2026-10-13)
 
 ## 1. Redis IPv4-First Resolution & Transient Drop Resilience

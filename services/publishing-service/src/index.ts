@@ -5,7 +5,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { TwitterApi } from 'twitter-api-v2';
 import { createClient } from '@supabase/supabase-js';
-import { publishRateLimiter, requireEncryptionKey } from '@socialpush/shared';
+import { publishRateLimiter, requireEncryptionKey, isInternalRequest, internalHeaders } from '@socialpush/shared';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
@@ -443,7 +443,7 @@ class YouTubeAdapter implements PlatformAdapter {
     try {
       const refreshRes = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/youtube/refresh`, {
          method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
+         headers: { 'Content-Type': 'application/json', ...internalHeaders() },
          body: JSON.stringify({ accountId: account.id })
       });
       const refreshData = await refreshRes.json();
@@ -1163,6 +1163,8 @@ const adapters: Record<string, PlatformAdapter> = {
 };
 
 app.post('/api/v1/publish/:jobId', async (req, res) => {
+  // Only the worker triggers publishing; this domain is public, so a job id alone must not be enough.
+  if (!isInternalRequest(req)) return res.status(401).json({ error: 'Unauthorized' });
   const { jobId } = req.params;
   const startTime = Date.now();
   console.log(`[PublishingService] [${new Date().toISOString()}] Incoming publish request for job: ${jobId}`);
@@ -1187,24 +1189,35 @@ app.post('/api/v1/publish/:jobId', async (req, res) => {
     return res.json({ success: true, message: `Already published to ${job.platform} (found an existing record).` });
   }
 
-  // Rate Limiting Check
+  // Rate Limiting Check. Fails open: the limiter lives in Upstash, and an Upstash outage or exhausted quota used to
+  // throw out of this handler, which crashed the service mid-request and failed every publish with
+  // "fetch failed (other side closed)". A missing rate limit is far cheaper than no publishing at all.
   if (publishRateLimiter) {
-    const { success, limit, remaining, reset } = await publishRateLimiter.limit(`publish_${job.user_id}`);
-    res.set('X-RateLimit-Limit', limit.toString());
-    res.set('X-RateLimit-Remaining', remaining.toString());
-    res.set('X-RateLimit-Reset', reset.toString());
+    try {
+      const { success, limit, remaining, reset } = await publishRateLimiter.limit(`publish_${job.user_id}`);
+      res.set('X-RateLimit-Limit', limit.toString());
+      res.set('X-RateLimit-Remaining', remaining.toString());
+      res.set('X-RateLimit-Reset', reset.toString());
 
-    if (!success) {
-      return res.status(429).json({ error: 'Too Many Requests. You can only publish 5 posts per minute.' });
+      if (!success) {
+        return res.status(429).json({ error: 'Too Many Requests. You can only publish 5 posts per minute.' });
+      }
+    } catch (err: any) {
+      console.warn(`[PublishingService] Rate limiter unavailable, continuing without it: ${err?.message || err}`);
     }
   }
 
   const { data: post, error: postError } = await supabase.from('posts').select('*').eq('id', job.post_id).single();
   if (postError || !post) return res.status(404).json({ error: 'Post not found' });
 
-  const { data: account, error: accError } = await supabase.from('social_accounts')
-    .select('*').eq('user_id', post.user_id).eq('platform', job.platform).single();
-    
+  // Accounts belong to a team: look the account up by the post's team, not its author, so an author who is in two
+  // teams publishes through the right team's account. Newest first + limit(1) instead of .single(), which errored
+  // (and failed the job as "not connected") whenever a team had two accounts on the same platform.
+  let accountQuery = supabase.from('social_accounts').select('*').eq('platform', job.platform);
+  accountQuery = post.team_id ? accountQuery.eq('team_id', post.team_id) : accountQuery.eq('user_id', post.user_id);
+  const { data: accounts, error: accError } = await accountQuery.order('created_at', { ascending: false }).limit(1);
+  const account = accounts?.[0];
+
   if (accError || !account) return res.status(404).json({ error: `${job.platform} account not connected` });
 
   const adapter = adapters[job.platform];

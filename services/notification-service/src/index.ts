@@ -27,17 +27,18 @@ const worker = new Worker(NOTIFICATIONS_QUEUE_NAME, async (job: Job) => {
   console.log(`[NotificationService] Processing notification for user ${userId} - Type: ${type}`);
 
   try {
-    await supabase.from('notifications').insert({
+    // Throwing on a failed insert lets BullMQ record (and retry) the job instead of reporting it as done while the
+    // user never sees the notification.
+    const { error: insertError } = await supabase.from('notifications').insert({
       user_id: userId,
       type,
       message,
       read: false
     });
+    if (insertError) throw new Error(`Saving the notification failed: ${insertError.message}`);
 
-    const { data: user } = await supabase.auth.admin.getUserById(userId);
-    const email = user?.user?.email;
-    
-    console.log(`[Email Mock] Sending email to ${email}:`);
+    // Email delivery is still a mock; log the user id rather than their address.
+    console.log(`[Email Mock] Notification email for user ${userId}:`);
     console.log(`Subject: SocialPush Update - ${type === 'success' ? 'Post Published' : 'Publishing Failed'}`);
     console.log(`Body: ${message}`);
     console.log('----------------------------------------------------');

@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
-import { getRedisConnection, getQueue, requireUser } from '@socialpush/shared';
+import { getRedisConnection, getQueue, requireUser, withTimeout } from '@socialpush/shared';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 const app = express();
@@ -26,6 +26,11 @@ const publishQueue = getQueue(redisConnection);
 // Options every publish job is queued with. Retries are NOT BullMQ attempts: the worker retries transient failures itself
 // (3 attempts, backoff 1 min then 2 min, see services/worker/src/failureRules.ts) and fails permanent errors at once.
 // Finished jobs are pruned so Redis does not fill up - the outcome lives in publish_jobs.
+// Without this an unreachable Redis made the schedule request hang forever (the browser sat on "Publishing...");
+// a timeout throws into the existing rollback, which deletes the half-created rows and returns an error.
+const QUEUE_ADD_TIMEOUT_MS = 15_000;
+const SCHEDULABLE_PLATFORMS = new Set(['facebook', 'instagram', 'youtube', 'threads', 'twitter', 'linkedin', 'tiktok', 'pinterest']);
+
 const PUBLISH_JOB_OPTIONS = {
   removeOnComplete: { age: 3 * 24 * 3600, count: 500 },
   removeOnFail: { age: 14 * 24 * 3600, count: 500 },
@@ -54,6 +59,19 @@ app.post('/api/v1/schedules', async (req, res) => {
   
   if (isNaN(scheduledDate.getTime()) || scheduledDate < fiveMinutesAgo) {
     return res.status(400).json({ error: 'Invalid or past date' });
+  }
+
+  // `platforms` must be an array of known names: a bare string like "twitter" used to be iterated per character.
+  if (!Array.isArray(platforms) || platforms.some((p: unknown) => typeof p !== 'string' || !SCHEDULABLE_PLATFORMS.has(p))) {
+    return res.status(400).json({ error: `platforms must be a list drawn from: ${[...SCHEDULABLE_PLATFORMS].join(', ')}` });
+  }
+  // Re-submitting (a double click, or scheduling an already scheduled post) used to queue a second publish per
+  // platform. Only a platform whose latest job failed may be queued again - and that goes through /retry.
+  const { data: activeJobs } = await supabase.from('publish_jobs').select('platform, status')
+    .eq('post_id', postId).in('platform', platforms).in('status', ['scheduled', 'processing', 'completed']);
+  if (activeJobs && activeJobs.length > 0) {
+    const busy = [...new Set(activeJobs.map((j: any) => j.platform))].join(', ');
+    return res.status(409).json({ error: `This post is already scheduled or published on: ${busy}` });
   }
 
   let resolvedContentType = contentType;
@@ -101,12 +119,12 @@ app.post('/api/v1/schedules', async (req, res) => {
       const baseDelay = scheduledDate.getTime() - Date.now();
       const delay = Math.max(0, baseDelay) + staggerDelayMs;
 
-      await publishQueue.add('publish-post', {
+      await withTimeout(publishQueue.add('publish-post', {
         jobId: jobRecord.id,
         postId,
         userId,
         platform
-      }, { ...PUBLISH_JOB_OPTIONS, delay, jobId: jobRecord.id });
+      }, { ...PUBLISH_JOB_OPTIONS, delay, jobId: jobRecord.id }), QUEUE_ADD_TIMEOUT_MS, 'Queueing the publish job');
     }
 
     // Update post status to scheduled
@@ -195,12 +213,12 @@ app.post('/api/v1/posts/:postId/retry', async (req, res) => {
       created.push({ id: row.id, platform: row.platform });
 
       const staggerDelayMs = (isVideoRetry && failed.length > 1) ? (i * 30_000) : 0;
-      await publishQueue.add('publish-post', { 
+      await withTimeout(publishQueue.add('publish-post', { 
         jobId: row.id, 
         postId, 
         userId, 
         platform: row.platform 
-      }, { ...PUBLISH_JOB_OPTIONS, delay: staggerDelayMs, jobId: row.id });
+      }, { ...PUBLISH_JOB_OPTIONS, delay: staggerDelayMs, jobId: row.id }), QUEUE_ADD_TIMEOUT_MS, 'Queueing the retry job');
     }
 
     await supabase.from('posts').update({ status: 'scheduled', updated_at: new Date().toISOString() }).eq('id', postId);

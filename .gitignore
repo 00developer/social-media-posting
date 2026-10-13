@@ -46,3 +46,6 @@ download_and_probe.js
 services/media-service/test-ffmpeg4.js
 services/media-service/test_out.mp4
 services/media-service/verify_video.js
+
+# browser test artifacts (Playwright MCP screenshots, snapshots, console logs)
+.playwright-mcp/

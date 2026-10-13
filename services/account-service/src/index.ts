@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
 
-import { getCachedTeamRole, setCachedTeamRole, requireUser, requireEncryptionKey } from '@socialpush/shared';
+import { getCachedTeamRole, setCachedTeamRole, requireUser, requireEncryptionKey, isInternalRequest } from '@socialpush/shared';
 import { fetchAccountIdentity } from './identity';
 
 const PINTEREST_API_BASE = process.env.PINTEREST_API_BASE || 'https://api.pinterest.com';
@@ -25,7 +25,28 @@ const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-const oauthStates = new Map<string, { codeVerifier: string, state: string, userId: string, teamId: string }>();
+// Express 4 does not catch rejected promises from async handlers (e.g. /auth/:platform/url); keep one failure from
+// taking down OAuth connect for everyone.
+process.on('uncaughtException', (err: any) => console.error('[AccountService] Uncaught Exception:', err?.message || err));
+process.on('unhandledRejection', (err: any) => console.error('[AccountService] Unhandled Rejection:', err?.message || err));
+
+type OAuthState = { codeVerifier: string, state: string, userId: string, teamId: string };
+// In-memory OAuth state with a TTL: an abandoned connect flow (popup closed before the callback) used to leave its
+// entry here forever. Same get/set/delete surface as the Map it replaces.
+const OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
+const oauthStates = new (class {
+  private entries = new Map<string, { value: OAuthState; expires: number }>();
+  set(key: string, value: OAuthState) { this.entries.set(key, { value, expires: Date.now() + OAUTH_STATE_TTL_MS }); }
+  get(key: string) {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (entry.expires < Date.now()) { this.entries.delete(key); return undefined; }
+    return entry.value;
+  }
+  delete(key: string) { this.entries.delete(key); }
+  sweep() { const now = Date.now(); for (const [k, e] of this.entries) if (e.expires < now) this.entries.delete(k); }
+})();
+setInterval(() => oauthStates.sweep(), OAUTH_STATE_TTL_MS).unref();
 const ENCRYPTION_KEY = requireEncryptionKey();
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
 
@@ -477,6 +498,8 @@ export async function refreshYouTubeToken(accountId: string, refreshTokenEncrypt
 }
 
 app.post('/api/v1/auth/youtube/refresh', async (req, res) => {
+  // Returns a live Google access token, so only the other backend services may call it.
+  if (!isInternalRequest(req)) return res.status(401).json({ error: 'Unauthorized' });
   const { accountId } = req.body;
   if (!accountId) return res.status(400).json({ error: 'Missing accountId' });
 

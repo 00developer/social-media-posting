@@ -44,6 +44,19 @@ export function getRedisConnection(url: string) {
   return redis;
 }
 
+/**
+ * Rejects if `promise` has not settled within `ms`. Redis connections use maxRetriesPerRequest: null (BullMQ needs
+ * it), which makes a command wait forever while Redis is unreachable; request handlers wrap their Redis calls in
+ * this so the user gets an error instead of a request that never returns.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s (is Redis reachable?)`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 export function getQueue(connection: Redis) {
   return new Queue(PUBLISH_QUEUE_NAME, { connection });
 }
@@ -57,4 +70,5 @@ export * from './cache';
 export * from './ratelimit';
 export * from './auth';
 export * from './secrets';
+export * from './internal';
 

@@ -147,9 +147,10 @@ export async function syncPublishedPostStats(supabase: SupabaseClient, decrypt: 
     try {
       const key = `${row.user_id}:${row.platform}:${row.team_id ?? ''}`;
       if (!accountCache.has(key)) {
-        let query = supabase.from('social_accounts').select('*').eq('user_id', row.user_id).eq('platform', row.platform);
-        if (row.team_id) query = query.eq('team_id', row.team_id);
-        const { data } = await query.limit(1);
+        // Team-scoped (see comments.ts loadAccount): the author and the member who connected the account can differ.
+        let query = supabase.from('social_accounts').select('*').eq('platform', row.platform);
+        query = row.team_id ? query.eq('team_id', row.team_id) : query.eq('user_id', row.user_id);
+        const { data } = await query.order('created_at', { ascending: false }).limit(1);
         accountCache.set(key, data?.[0] ?? null);
       }
       const account = accountCache.get(key);

@@ -4,7 +4,7 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import { Queue, Worker, Job } from 'bullmq';
-import { getRedisConnection, upstashRedis, requireEncryptionKey } from '@socialpush/shared';
+import { getRedisConnection, upstashRedis, requireEncryptionKey, internalHeaders, withTimeout } from '@socialpush/shared';
 import { createClient } from '@supabase/supabase-js';
 import { syncComments, replyToComment, type CommentsContext } from './comments';
 import { syncPublishedPostStats, syncThreadsStats, backfillAnalyticsTeamIds, recordAnalyticsHistory } from './publishedStats';
@@ -54,6 +54,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const EVENT_PLATFORMS = new Set(['facebook', 'instagram', 'youtube', 'threads', 'twitter', 'linkedin', 'tiktok', 'pinterest']);
+
 // API route to accept real-time analytics events
 app.post('/api/v1/analytics/event', async (req, res) => {
   const { postId, platform, eventType } = req.body;
@@ -64,14 +66,24 @@ app.post('/api/v1/analytics/event', async (req, res) => {
   if (!['views', 'likes', 'shares'].includes(eventType)) {
     return res.status(400).json({ error: 'Invalid eventType' });
   }
+  // postId and platform end up in a Redis key that the sync job splits on ':', so both are validated strictly.
+  if (!/^[0-9a-f-]{36}$/i.test(String(postId)) || !EVENT_PLATFORMS.has(String(platform))) {
+    return res.status(400).json({ error: 'Invalid postId or platform' });
+  }
 
   try {
+    // Only a member of the post's team may record events for it - otherwise anyone could inflate the counters.
+    const { data: post } = await supabase.from('posts').select('team_id').eq('id', postId).maybeSingle();
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    const auth = await authorizeTeam(req, post.team_id);
+    if ('error' in auth) return res.status(auth.status).json({ error: auth.error });
+
     // Atomically increment the specific counter in Redis
     const key = `analytics:${postId}:${platform}:${eventType}`;
     if (upstashRedis) {
       await upstashRedis.incr(key);
     } else {
-      await redisConnection.incr(key);
+      await withTimeout(redisConnection.incr(key), 5000, 'Recording the analytics event');
     }
     res.json({ success: true });
   } catch (err: any) {
@@ -84,15 +96,15 @@ app.post('/api/v1/analytics/event', async (req, res) => {
 const commentsCtx: CommentsContext = { supabase, decrypt, accountServiceUrl: ACCOUNT_SERVICE_URL };
 
 // The caller is the signed-in dashboard user: check their Supabase token and that they belong to the team.
-async function authorizeTeam(req: express.Request, teamId: string | null | undefined): Promise<{ userId: string } | { error: string; status: number }> {
+async function authorizeTeam(req: express.Request, teamId: string | null | undefined): Promise<{ userId: string; role: string } | { error: string; status: number }> {
   const token = (req.headers.authorization || '').replace(/^Bearer /i, '');
   if (!token) return { error: 'Missing Authorization header', status: 401 };
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) return { error: 'Invalid or expired session', status: 401 };
   if (!teamId) return { error: 'Missing team', status: 400 };
-  const { data: member } = await supabase.from('team_members').select('user_id').eq('team_id', teamId).eq('user_id', data.user.id).maybeSingle();
+  const { data: member } = await supabase.from('team_members').select('role').eq('team_id', teamId).eq('user_id', data.user.id).maybeSingle();
   if (!member) return { error: 'You are not a member of this team', status: 403 };
-  return { userId: data.user.id };
+  return { userId: data.user.id, role: member.role as string };
 }
 
 // Pull the latest comments for a team now (the Comments page uses this for its Refresh button).
@@ -116,6 +128,8 @@ app.post('/api/v1/comments/reply', async (req, res) => {
   if (!comment) return res.status(404).json({ error: 'Comment not found' });
   const auth = await authorizeTeam(req, comment.team_id);
   if ('error' in auth) return res.status(auth.status).json({ error: auth.error });
+  // A reply goes out publicly under the team's account, so viewers (read-only) may not send one.
+  if (auth.role === 'viewer') return res.status(403).json({ error: 'Viewers cannot reply to comments' });
   try {
     res.json({ success: true, reply: await replyToComment(commentsCtx, comment, reply) });
   } catch (err: any) {
@@ -314,7 +328,7 @@ const worker = new Worker(ANALYTICS_QUEUE_NAME, async (job: Job) => {
             // Attempt refresh
             const refreshRes = await fetch(`${ACCOUNT_SERVICE_URL}/api/v1/auth/youtube/refresh`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', ...internalHeaders() },
               body: JSON.stringify({ accountId: account.id })
             });
             const refreshData = await refreshRes.json();

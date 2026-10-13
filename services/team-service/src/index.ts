@@ -16,6 +16,24 @@ app.use(express.json());
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
+// Express 4 does not catch rejected promises from async handlers; without these a single failed Supabase call
+// takes the whole service down for every user.
+process.on('uncaughtException', (err: any) => console.error('[TeamService] Uncaught Exception:', err?.message || err));
+process.on('unhandledRejection', (err: any) => console.error('[TeamService] Unhandled Rejection:', err?.message || err));
+
+// auth.admin.listUsers() returns one page (50 users by default), so a plain find() missed everyone past it.
+async function findUserByEmail(email: string): Promise<{ id: string } | undefined> {
+  const perPage = 1000;
+  for (let page = 1; page <= 50; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const match = data.users.find((u) => (u.email || '').toLowerCase() === email);
+    if (match) return match;
+    if (data.users.length < perPage) return undefined;
+  }
+  return undefined;
+}
+
 app.get('/api/v1/teams', async (req, res) => {
   const authed = await requireUser(req, supabase);
   if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
@@ -61,10 +79,18 @@ app.post('/api/v1/teams/:teamId/invite', async (req, res) => {
     return res.status(403).json({ error: 'Only the team owner can invite another admin' });
   }
 
-  const { data: { users }, error: fetchErr } = await supabase.auth.admin.listUsers();
-  const targetUser = users.find((u: any) => u.email === email);
+  const wanted = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wanted)) return res.status(400).json({ error: 'Enter a valid email address' });
 
-  if (!targetUser) return res.status(404).json({ error: 'User not found' });
+  let targetUser: { id: string } | undefined;
+  try {
+    targetUser = await findUserByEmail(wanted);
+  } catch (err: any) {
+    console.error('[TeamService] User lookup failed:', err?.message || err);
+    return res.status(502).json({ error: 'Could not look up that user right now. Try again.' });
+  }
+
+  if (!targetUser) return res.status(404).json({ error: 'No SocialPush account uses that email. Ask them to sign up first.' });
 
   const { error } = await supabase.from('team_members').insert({
     team_id: teamId,
@@ -72,6 +98,7 @@ app.post('/api/v1/teams/:teamId/invite', async (req, res) => {
     role
   });
 
+  if (error?.code === '23505') return res.status(409).json({ error: 'That user is already a member of this team' });
   if (error) return res.status(500).json({ error: error.message });
 
   // Invalidate/set cache for the new user immediately

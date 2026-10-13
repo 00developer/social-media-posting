@@ -34,6 +34,21 @@ services:
         NEXT_PUBLIC_ANALYTICS_SERVICE_URL: ${NEXT_PUBLIC_ANALYTICS_SERVICE_URL:-http://localhost:3008}
     restart: unless-stopped
 
+  # Queue + cache for every backend service. Runs inside this stack (not exposed publicly) with the eviction policy
+  # BullMQ requires: "noeviction" - an LRU policy can silently drop queued publish jobs under memory pressure. AOF
+  # persistence keeps scheduled (delayed) jobs across restarts and redeploys. Point REDIS_URL at redis://redis:6379.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   account-service:
     build: { context: ., args: { SERVICE: account-service } }
     env_file: .env
@@ -44,6 +59,9 @@ services:
 
   post-service:
     build: { context: ., args: { SERVICE: post-service } }
+    depends_on:
+      redis:
+        condition: service_healthy
     env_file: .env
     environment:
       PORT: 3002
@@ -51,6 +69,9 @@ services:
 
   publishing-service:
     build: { context: ., args: { SERVICE: publishing-service } }
+    depends_on:
+      redis:
+        condition: service_healthy
     env_file: .env
     environment:
       PORT: 3003
@@ -59,6 +80,9 @@ services:
 
   scheduling-service:
     build: { context: ., args: { SERVICE: scheduling-service } }
+    depends_on:
+      redis:
+        condition: service_healthy
     env_file: .env
     environment:
       PORT: 3004
@@ -66,6 +90,9 @@ services:
 
   worker:
     build: { context: ., args: { SERVICE: worker } }
+    depends_on:
+      redis:
+        condition: service_healthy
     env_file: .env
     environment:
       PUBLISHING_SERVICE_URL: http://publishing-service:3003
@@ -80,11 +107,17 @@ services:
 
   notification-service:
     build: { context: ., args: { SERVICE: notification-service } }
+    depends_on:
+      redis:
+        condition: service_healthy
     env_file: .env
     restart: unless-stopped
 
   analytics-service:
     build: { context: ., args: { SERVICE: analytics-service } }
+    depends_on:
+      redis:
+        condition: service_healthy
     env_file: .env
     environment:
       PORT: 3008
@@ -106,3 +139,6 @@ services:
     environment:
       SUPABASE_UPSTREAM_HOST: ${SUPABASE_UPSTREAM_HOST:-}
     restart: unless-stopped
+
+volumes:
+  redis-data:

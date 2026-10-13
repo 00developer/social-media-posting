@@ -8,6 +8,7 @@
 // Without them the platform refuses the call; that is logged once per run and nothing else breaks.
 // LinkedIn and Pinterest give apps like this no comments API, so they are not covered.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { internalHeaders } from '@socialpush/shared';
 import { getJson, getPages } from './publishedStats';
 
 const GRAPH = 'https://graph.facebook.com/v18.0';
@@ -29,8 +30,10 @@ type Fetched = { id: string; parent: string | null; authorName: string; authorId
 const clean = (s?: string | null) => (s || '').replace(/^@/, '').trim().toLowerCase();
 
 async function loadAccount(ctx: CommentsContext, userId: string, platform: string, teamId: string | null) {
-  let query = ctx.supabase.from('social_accounts').select('*').eq('user_id', userId).eq('platform', platform);
-  if (teamId) query = query.eq('team_id', teamId);
+  // Accounts are shared by the whole team: scope by team when there is one (the member who connected the account
+  // is often not the one who published the post), and only fall back to the author for team-less legacy rows.
+  let query = ctx.supabase.from('social_accounts').select('*').eq('platform', platform);
+  query = teamId ? query.eq('team_id', teamId) : query.eq('user_id', userId);
   // Reconnecting can leave an older row behind: use the most recently connected account.
   const { data } = await query.order('created_at', { ascending: false }).limit(1);
   return data?.[0] ?? null;
@@ -48,7 +51,7 @@ async function youtubeCall(ctx: CommentsContext, account: any, url: string, init
   let res = await send();
   if (res.status === 401) {
     const refresh = await fetch(`${ctx.accountServiceUrl}/api/v1/auth/youtube/refresh`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: account.id }),
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...internalHeaders() }, body: JSON.stringify({ accountId: account.id }),
     });
     const data: any = await refresh.json().catch(() => ({}));
     if (data.success) { token = data.accessToken; res = await send(); }

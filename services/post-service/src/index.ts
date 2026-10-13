@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
-import { getCachedTeamRole, setCachedTeamRole, upstashRedis, getRedisConnection, requireUser } from '@socialpush/shared';
+import { getCachedTeamRole, setCachedTeamRole, upstashRedis, getRedisConnection, requireUser, withTimeout } from '@socialpush/shared';
 import { getContentProblem, getEditBlockReason } from './editability';
 import { generateCaption, generateCaptionFromImage, checkAndRecordUsage, AiNotConfiguredError } from '@socialpush/ai';
 
@@ -55,7 +55,8 @@ app.get('/api/v1/posts', async (req, res) => {
     // Range (calendar) queries are never cached: their keys are not invalidated when a
     // post is created, rescheduled or changes status, so a cache would serve stale events.
     const cacheKey = `feed:${teamId}`;
-    const cachedFeed = isRangeQuery ? null : await redis.get(cacheKey);
+    // A cache that is down or slow is treated as a miss rather than hanging the request.
+    const cachedFeed = isRangeQuery ? null : await withTimeout(redis.get(cacheKey), 3000, 'Feed cache read').catch(() => null);
 
     if (cachedFeed) {
       // If using upstashRedis, it might auto-parse JSON depending on the SDK version, or return string.

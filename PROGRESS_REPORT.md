@@ -99,7 +99,7 @@
   - Streamlined draft publishing: clicking "Publish" automatically detects saved target platforms from `media_url` and `schedules` without browser prompts.
 
 ## 4. Redis Cloud Migration & Dataset Optimization
-- **Action:** Migrated from Upstash to Redis Cloud instance (`redis://default:zPHbngbI55u3x9LbGE9cuujiez1smpJb@neostylish-famed-simple-90270.db.redis.io:10425`).
+- **Action:** Migrated from Upstash to Redis Cloud instance (`redis://default:<redacted>@<redis-cloud-host>:<port>`).
 - **Optimization:** Analyzed memory usage (3.2 MB / 30 MB free tier) and configured job pruning TTLs (`removeOnComplete: { age: 24h, count: 1000 }`, `removeOnFail: { age: 7d, count: 500 }`) in `scheduling-service` and `worker` to keep dataset memory consistently low.
 
 ---

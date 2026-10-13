@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import { Worker, Job, DelayedError, UnrecoverableError } from 'bullmq';
-import { getRedisConnection, PUBLISH_QUEUE_NAME, getNotificationsQueue } from '@socialpush/shared';
+import { getRedisConnection, PUBLISH_QUEUE_NAME, getNotificationsQueue, internalHeaders } from '@socialpush/shared';
 import { createClient } from '@supabase/supabase-js';
 import {
   decideFailureAction,
@@ -103,6 +103,7 @@ const worker = new Worker(PUBLISH_QUEUE_NAME, async (job: Job, token?: string) =
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...internalHeaders(),
         },
         signal: controller.signal
       });

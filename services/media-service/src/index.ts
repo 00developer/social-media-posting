@@ -23,7 +23,20 @@ app.use(cors());
 app.use(express.json());
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-const upload = multer({ storage: multer.memoryStorage() });
+// Files are held in memory while ffmpeg/sharp process them, so the size cap (matching the composer's "up to 100MB")
+// is what keeps one oversized upload from exhausting the container's RAM.
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });
+
+// Runs before multer so an unauthenticated request is refused before its body is buffered into memory.
+const authBeforeUpload: express.RequestHandler = async (req, res, next) => {
+  const authed = await requireUser(req, supabase);
+  if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
+  next();
+};
+
+// Platform names become part of the storage path, so only known ones are accepted.
+const ALLOWED_PLATFORMS = new Set(['facebook', 'instagram', 'youtube', 'threads', 'twitter', 'linkedin', 'tiktok', 'pinterest']);
 
 async function processVideo(inputBuffer: Buffer, platform: string, contentType: string = 'post'): Promise<Buffer> {
   const tempInput = path.join(os.tmpdir(), `in_${crypto.randomUUID()}.mp4`);
@@ -91,7 +104,7 @@ async function processVideo(inputBuffer: Buffer, platform: string, contentType: 
   });
 }
 
-app.post('/api/v1/media/upload', upload.single('file'), async (req, res) => {
+app.post('/api/v1/media/upload', authBeforeUpload, upload.single('file'), async (req, res) => {
   const { platforms, contentType } = req.body;
   const uploadedFile = req.file;
   if (!uploadedFile || !platforms) return res.status(400).json({ error: 'Missing parameters' });
@@ -100,7 +113,8 @@ app.post('/api/v1/media/upload', upload.single('file'), async (req, res) => {
   if ('error' in authed) return res.status(authed.status).json({ error: authed.error });
   const userId = authed.userId;
 
-  const platformList = platforms.split(',');
+  const platformList = String(platforms).split(',').map((p) => p.trim().toLowerCase()).filter((p) => ALLOWED_PLATFORMS.has(p));
+  if (platformList.length === 0) return res.status(400).json({ error: 'No valid platforms selected' });
   const postId = crypto.randomUUID(); 
   const results: Record<string, string> = {};
 
@@ -173,7 +187,7 @@ app.post('/api/v1/media/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-app.post('/api/v1/media/transcode-preview', upload.single('file'), async (req, res) => {
+app.post('/api/v1/media/transcode-preview', authBeforeUpload, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Missing file' });
 
   const authed = await requireUser(req, supabase);
@@ -226,7 +240,7 @@ app.post('/api/v1/media/transcode-preview', upload.single('file'), async (req, r
 // downsized copy; for a video, a single frame grabbed a second in (the AI can't watch a video, only see a picture).
 // Stored under ai-context/ in the same public bucket the post media uses - these accumulate over time with no
 // cleanup job yet, which is fine at this scale but worth revisiting if storage usage becomes a concern.
-app.post('/api/v1/media/ai-thumbnail', upload.single('file'), async (req, res) => {
+app.post('/api/v1/media/ai-thumbnail', authBeforeUpload, upload.single('file'), async (req, res) => {
   const uploadedFile = req.file;
   if (!uploadedFile) return res.status(400).json({ error: 'Missing parameters' });
 
@@ -267,6 +281,16 @@ app.post('/api/v1/media/ai-thumbnail', upload.single('file'), async (req, res) =
     console.error('[Media] AI thumbnail failed:', error.message);
     res.status(500).json({ error: 'Could not prepare the media for the AI assistant.' });
   }
+});
+
+// multer's limit errors (and any other thrown error) as JSON, instead of Express's default HTML 500 page.
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    const tooLarge = err.code === 'LIMIT_FILE_SIZE';
+    return res.status(tooLarge ? 413 : 400).json({ error: tooLarge ? 'File is too large (max 100MB).' : err.message });
+  }
+  console.error('[Media] Unhandled error:', err?.message || err);
+  res.status(500).json({ error: 'Media processing failed.' });
 });
 
 const PORT = process.env.PORT || 3006;

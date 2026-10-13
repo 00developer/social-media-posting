@@ -83,10 +83,13 @@ const worker = new bullmq_1.Worker(shared_1.PUBLISH_QUEUE_NAME, async (job, toke
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 600_000);
         let res;
+        const fetchStartTime = Date.now();
         try {
             res = await fetch(`${PUBLISHING_SERVICE_URL}/api/v1/publish/${jobId}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                },
                 signal: controller.signal
             });
         }
@@ -94,6 +97,8 @@ const worker = new bullmq_1.Worker(shared_1.PUBLISH_QUEUE_NAME, async (job, toke
             clearTimeout(timeoutId);
         }
         httpStatus = res.status;
+        const durationSec = ((Date.now() - fetchStartTime) / 1000).toFixed(1);
+        console.log(`[Worker] Job ${jobId} (${platform}) HTTP call completed in ${durationSec}s with status ${res.status}`);
         const result = await res.json().catch(() => ({}));
         if (res.status === 429) {
             // Rate limited (per-user limiter or the platform's own quota): try again in an hour, not an attempt used up.

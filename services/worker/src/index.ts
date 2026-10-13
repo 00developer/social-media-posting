@@ -97,10 +97,13 @@ const worker = new Worker(PUBLISH_QUEUE_NAME, async (job: Job, token?: string) =
     const timeoutId = setTimeout(() => controller.abort(), 600_000);
 
     let res: Response;
+    const fetchStartTime = Date.now();
     try {
       res = await fetch(`${PUBLISHING_SERVICE_URL}/api/v1/publish/${jobId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         signal: controller.signal
       });
     } finally {
@@ -108,6 +111,8 @@ const worker = new Worker(PUBLISH_QUEUE_NAME, async (job: Job, token?: string) =
     }
 
     httpStatus = res.status;
+    const durationSec = ((Date.now() - fetchStartTime) / 1000).toFixed(1);
+    console.log(`[Worker] Job ${jobId} (${platform}) HTTP call completed in ${durationSec}s with status ${res.status}`);
     const result = await res.json().catch(() => ({} as any));
 
     if (res.status === 429) {

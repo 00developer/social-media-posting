@@ -193,7 +193,11 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     const channel = supabase
       .channel('realtime:updates')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
-        setNotifications(prev => [payload.new as AppNotification, ...prev].slice(0, NOTIFICATION_LIMIT));
+        setNotifications(prev => {
+          const newItem = payload.new as AppNotification;
+          const filtered = prev.filter(item => item.id !== newItem.id);
+          return [newItem, ...filtered].slice(0, NOTIFICATION_LIMIT);
+        });
         // Refresh team data to update timeline post statuses
         scheduleRefetch();
       })

@@ -71,7 +71,8 @@ app.post('/api/v1/schedules', async (req, res) => {
   const createdSchedules: string[] = [];
   const createdJobs: string[] = [];
   try {
-    for (const platform of platforms) {
+    for (let i = 0; i < platforms.length; i++) {
+      const platform = platforms[i];
       // Insert schedule record
       const { data: scheduleRow, error: scheduleError } = await supabase.from('schedules').insert({
         post_id: postId,
@@ -94,8 +95,12 @@ app.post('/api/v1/schedules', async (req, res) => {
       if (jobError) throw jobError;
       createdJobs.push(jobRecord.id);
 
-      // Add to BullMQ
-      const delay = scheduledDate.getTime() - Date.now();
+      // Add to BullMQ with stagger delay for multi-platform video posts to avoid network bandwidth saturation
+      const isVideoUpload = (resolvedContentType === 'reel');
+      const staggerDelayMs = (isVideoUpload && platforms.length > 1) ? (i * 30_000) : 0;
+      const baseDelay = scheduledDate.getTime() - Date.now();
+      const delay = Math.max(0, baseDelay) + staggerDelayMs;
+
       await publishQueue.add('publish-post', {
         jobId: jobRecord.id,
         postId,
@@ -176,7 +181,9 @@ app.post('/api/v1/posts/:postId/retry', async (req, res) => {
 
   const created: Array<{ id: string; platform: string }> = [];
   try {
-    for (const old of failed) {
+    const isVideoRetry = postHasVideo || failed.some(j => j.content_type === 'reel');
+    for (let i = 0; i < failed.length; i++) {
+      const old = failed[i];
       const { data: row, error } = await supabase.from('publish_jobs').insert({
         post_id: postId,
         user_id: userId,
@@ -187,7 +194,13 @@ app.post('/api/v1/posts/:postId/retry', async (req, res) => {
       if (error) throw error;
       created.push({ id: row.id, platform: row.platform });
 
-      await publishQueue.add('publish-post', { jobId: row.id, postId, userId, platform: row.platform }, { ...PUBLISH_JOB_OPTIONS, jobId: row.id });
+      const staggerDelayMs = (isVideoRetry && failed.length > 1) ? (i * 30_000) : 0;
+      await publishQueue.add('publish-post', { 
+        jobId: row.id, 
+        postId, 
+        userId, 
+        platform: row.platform 
+      }, { ...PUBLISH_JOB_OPTIONS, delay: staggerDelayMs, jobId: row.id });
     }
 
     await supabase.from('posts').update({ status: 'scheduled', updated_at: new Date().toISOString() }).eq('id', postId);

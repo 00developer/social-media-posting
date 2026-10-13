@@ -26,10 +26,10 @@ const dotColor = (type?: string) => (type === 'success' ? 'bg-green-500' : type 
 export function NotificationList({ notifications, highlightIds, showOlder, onToggleOlder, now = new Date() }: NotificationListProps) {
   const { recent, older } = splitNotifications(notifications, now);
 
-  const renderItem = (n: NotificationLike) => {
+  const renderItem = (n: NotificationLike, index: number) => {
     const isNew = highlightIds.has(n.id) || !n.read;
     return (
-      <li key={n.id} className={`flex gap-3 px-4 py-3 border-b border-slate-800/60 last:border-b-0 ${isNew ? 'bg-indigo-950/40' : ''}`}>
+      <li key={`${n.id}-${index}`} className={`flex gap-3 px-4 py-3 border-b border-slate-800/60 last:border-b-0 ${isNew ? 'bg-indigo-950/40' : ''}`}>
         <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dotColor(n.type)}`} aria-hidden="true" />
         <div className="min-w-0">
           <p className="text-[13px] leading-relaxed text-slate-200 wrap-break-word">{n.message ?? ''}</p>
@@ -51,7 +51,7 @@ export function NotificationList({ notifications, highlightIds, showOlder, onTog
       {recent.length === 0 ? (
         <p className="px-4 py-6 text-center text-sm text-slate-400">You&apos;re all caught up. Nothing in the last {RECENT_DAYS} days.</p>
       ) : (
-        <ul>{recent.map(renderItem)}</ul>
+        <ul>{recent.map((n, i) => renderItem(n, i))}</ul>
       )}
 
       {older.length > 0 && (
@@ -64,7 +64,7 @@ export function NotificationList({ notifications, highlightIds, showOlder, onTog
           >
             {showOlder ? 'Hide older' : `Show older (${older.length})`}
           </button>
-          {showOlder && <ul className="border-t border-slate-800">{older.map(renderItem)}</ul>}
+          {showOlder && <ul className="border-t border-slate-800">{older.map((n, i) => renderItem(n, i + recent.length))}</ul>}
         </div>
       )}
     </div>

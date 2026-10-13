@@ -8,6 +8,16 @@ import { createClient } from '@supabase/supabase-js';
 import { publishRateLimiter, requireEncryptionKey } from '@socialpush/shared';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env') });
+
+process.on('uncaughtException', (err: any) => {
+  if (err?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT') return;
+  console.error('[PublishingService] Uncaught Exception:', err.message || err);
+});
+process.on('unhandledRejection', (err: any) => {
+  if (err?.code === 'ECONNRESET' || err?.cause?.code === 'ECONNRESET' || err?.code === 'ENOTFOUND' || err?.cause?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT') return;
+  console.error('[PublishingService] Unhandled Rejection:', err.message || err);
+});
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -27,6 +37,58 @@ function decrypt(text: string) {
   return decrypted.toString();
 }
 
+interface CachedMedia {
+  buffer: Buffer;
+  mime: string;
+  expiresAt: number;
+}
+const mediaCache = new Map<string, CachedMedia>();
+
+async function getMediaBuffer(url: string, retries = 3): Promise<{ buffer: Buffer; mime: string }> {
+  const cached = mediaCache.get(url);
+  if (cached && Date.now() < cached.expiresAt) {
+    console.log(`[MediaCache] Reusing cached media buffer for ${url.substring(0, 60)}... (${(cached.buffer.byteLength / (1024 * 1024)).toFixed(1)} MB)`);
+    return { buffer: cached.buffer, mime: cached.mime };
+  }
+
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`[MediaCache] Downloading media from storage (attempt ${attempt}/${retries}): ${url.substring(0, 60)}...`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120_000); // 2 minute timeout per attempt
+      
+      const res = await fetch(url, { signal: controller.signal, headers: { 'Connection': 'close' } });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        throw new Error(`Storage returned HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const arrayBuf = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuf);
+      const mime = res.headers.get('content-type') || 'application/octet-stream';
+      console.log(`[MediaCache] Successfully downloaded ${(buffer.byteLength / (1024 * 1024)).toFixed(1)} MB in attempt ${attempt}`);
+
+      // Cache for 10 minutes so all platforms for this post reuse the single download
+      mediaCache.set(url, { buffer, mime, expiresAt: Date.now() + 10 * 60 * 1000 });
+      for (const [k, v] of mediaCache.entries()) {
+        if (Date.now() > v.expiresAt) mediaCache.delete(k);
+      }
+
+      return { buffer, mime };
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[MediaCache] Download attempt ${attempt} failed:`, err?.message || err);
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
+    }
+  }
+
+  throw new Error(`Failed to download media after ${retries} attempts: ${lastError?.message || lastError}`);
+}
+
 interface PlatformAdapter {
   publish(post: any, account: any, decryptedToken: string, contentType?: string, job?: any): Promise<void>;
 }
@@ -40,10 +102,7 @@ class TwitterAdapter implements PlatformAdapter {
       const media = JSON.parse(post.media_url || '{}');
       const mediaUrl = media.twitter || null;
       if (mediaUrl) {
-        const mediaRes = await fetch(mediaUrl);
-        if (!mediaRes.ok) throw new Error(`Failed to fetch media from ${mediaUrl}`);
-        const buffer = Buffer.from(await mediaRes.arrayBuffer());
-        const mime = mediaRes.headers.get('content-type') || '';
+        const { buffer, mime } = await getMediaBuffer(mediaUrl);
         const isVideo = mime.startsWith('video/');
         mediaId = await client.v2.uploadMedia(buffer, {
           media_type: isVideo ? 'video/mp4' : (mime.includes('png') ? 'image/png' : 'image/jpeg'),
@@ -191,22 +250,73 @@ class FacebookAdapter implements PlatformAdapter {
     const videoId = startData.video_id;
     const uploadUrl = startData.upload_url;
 
-    const mediaRes = await fetch(mediaUrl);
-    if (!mediaRes.ok) throw new Error(`Failed to fetch media from ${mediaUrl}`);
-    const mediaBuffer = await mediaRes.arrayBuffer();
+    const { buffer: mediaBuffer } = await getMediaBuffer(mediaUrl);
+    const totalSize = mediaBuffer.byteLength;
 
-    const uploadRes = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: { 
-        'Authorization': `OAuth ${pageToken}`,
-        'offset': '0',
-        'file_size': mediaBuffer.byteLength.toString(),
-        'Content-Type': 'application/octet-stream'
-      },
-      body: Buffer.from(mediaBuffer)
-    });
-    const uploadData = await uploadRes.json();
-    if (uploadData.error) throw new Error(`Facebook Upload Phase Error: ${uploadData.error.message}`);
+    // Resilient chunked upload: 4 MB chunks prevent server socket timeouts during heavy uploads
+    const CHUNK_SIZE = 4 * 1024 * 1024;
+    let offset = 0;
+
+    while (offset < totalSize) {
+      const end = Math.min(offset + CHUNK_SIZE, totalSize);
+      const chunk = mediaBuffer.subarray(offset, end);
+      let chunkSuccess = false;
+      const pct = Math.round((offset / totalSize) * 100);
+      console.log(`[FacebookAdapter] Uploading Reel chunk: ${offset}/${totalSize} bytes (${pct}%)`);
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const uploadRes = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: { 
+              'Authorization': `OAuth ${pageToken}`,
+              'offset': offset.toString(),
+              'file_size': totalSize.toString(),
+              'Content-Type': 'application/octet-stream'
+            },
+            body: chunk as any
+          });
+
+          // Meta returns HTTP 206 for intermediate chunks, HTTP 200 for the final chunk
+          if (uploadRes.status === 206 || uploadRes.status === 200) {
+            const data = await uploadRes.json().catch(() => ({}));
+            if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+            chunkSuccess = true;
+            break;
+          } else {
+            const errBody = await uploadRes.text().catch(() => '');
+            throw new Error(`rupload returned HTTP ${uploadRes.status}: ${errBody}`);
+          }
+        } catch (err: any) {
+          console.warn(`[FacebookAdapter] Chunk at offset ${offset} failed (attempt ${attempt}/3): ${err?.message || err}`);
+          if (attempt === 3) throw err;
+
+          // Back off and check server's actual committed offset before retrying
+          await new Promise(r => setTimeout(r, 2000 * attempt));
+          try {
+            const checkRes = await fetch(uploadUrl, {
+              method: 'GET',
+              headers: { 'Authorization': `OAuth ${pageToken}` }
+            });
+            if (checkRes.ok) {
+              const checkData = await checkRes.json();
+              if (typeof checkData.offset === 'number' && checkData.offset > offset) {
+                console.log(`[FacebookAdapter] Recovered server offset: ${checkData.offset}/${totalSize}`);
+                offset = checkData.offset;
+                chunkSuccess = true;
+                break;
+              }
+            }
+          } catch {}
+        }
+      }
+
+      if (!chunkSuccess) {
+        throw new Error(`Failed to upload Facebook Reel chunk at offset ${offset} after 3 attempts`);
+      }
+
+      offset = end;
+    }
 
     const finishRes = await fetch(`https://graph.facebook.com/v18.0/${pageId}/video_reels`, {
       method: 'POST',
@@ -235,15 +345,15 @@ class InstagramAdapter implements PlatformAdapter {
   async publish(post: any, account: any, decryptedToken: string, contentType?: string, job?: any) {
     console.log(`[InstagramAdapter] Publishing post ${post.id}`);
     
-    const pages = await getFacebookPages(decryptedToken);
-    if (!pages || pages.length === 0) throw new Error("No Facebook pages found.");
+    let igAccountId = account.provider_account_id;
+    if (!igAccountId) {
+      const pages = await getFacebookPages(decryptedToken);
+      if (!pages || pages.length === 0) throw new Error("No Facebook pages found.");
 
-    // Same reasoning as FacebookAdapter above: prefer the exact IG business account id captured at connect time.
-    const pageWithIg = (account.provider_account_id && pages.find((p: any) => p.instagram_business_account?.id === account.provider_account_id))
-      || pages.find((p: any) => p.instagram_business_account);
-    if (!pageWithIg) throw new Error("No Instagram Business account linked to any of your Facebook pages.");
-    
-    const igAccountId = pageWithIg.instagram_business_account.id;
+      const pageWithIg = pages.find((p: any) => p.instagram_business_account);
+      if (!pageWithIg) throw new Error("No Instagram Business account linked to any of your Facebook pages.");
+      igAccountId = pageWithIg.instagram_business_account.id;
+    }
     
     let mediaUrl = null;
     try {
@@ -355,23 +465,77 @@ class YouTubeAdapter implements PlatformAdapter {
       throw new Error("YouTube only accepts video files. You provided an image.");
     }
     
-    // Check for existing session
-    const { data: session } = await supabase.from('youtube_upload_sessions').select('*').eq('post_id', post.id).eq('status', 'in_progress').maybeSingle();
-    
-    let sessionUri = session?.session_uri;
-    
-    // Download video to memory
-    const mediaRes = await fetch(mediaUrl);
-    const videoBuffer = await mediaRes.arrayBuffer();
+    // Download or retrieve cached video buffer
+    const { buffer: videoBuffer } = await getMediaBuffer(mediaUrl);
     const fileSize = videoBuffer.byteLength;
-    
-    if (!sessionUri) {
+    const totalMb = (fileSize / (1024 * 1024)).toFixed(1);
+
+    // Check for existing session
+    const { data: session } = await supabase.from('youtube_upload_sessions')
+      .select('*')
+      .eq('post_id', post.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // If an upload session was already marked completed with a valid video_id, record and finish!
+    if (session && session.status === 'completed' && session.video_id) {
+      console.log(`[YouTubeAdapter] Post ${post.id} already completed upload with video_id: ${session.video_id}`);
+      await recordPublishedPost(post, 'youtube', session.video_id, 'video');
+      return;
+    }
+
+    let sessionUri = session?.session_uri;
+    let offset = 0;
+    let videoId = session?.video_id || null;
+
+    // If we have an existing session URI, query Google for the committed byte offset
+    if (sessionUri) {
+      try {
+        console.log(`[YouTubeAdapter] Checking existing upload session status for post ${post.id}...`);
+        const queryRes = await fetch(sessionUri, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${activeToken}`,
+            'Content-Range': `bytes */${fileSize}`,
+            'Content-Length': '0'
+          }
+        });
+
+        if (queryRes.status === 200 || queryRes.status === 201) {
+          const finishedData = await queryRes.json().catch(() => ({}));
+          if (finishedData.id) {
+            videoId = finishedData.id;
+            console.log(`[YouTubeAdapter] Existing session already completed on YouTube: ${videoId}`);
+          }
+        } else if (queryRes.status === 308) {
+          const rangeHdr = queryRes.headers.get('Range');
+          if (rangeHdr) {
+            const m = rangeHdr.match(/bytes=0-(\d+)/);
+            if (m) {
+              offset = parseInt(m[1], 10) + 1;
+              console.log(`[YouTubeAdapter] Resuming existing session from offset: ${(offset / (1024 * 1024)).toFixed(1)}/${totalMb} MB`);
+            }
+          }
+        } else {
+          console.log(`[YouTubeAdapter] Existing session query returned HTTP ${queryRes.status}, starting new session.`);
+          sessionUri = null;
+        }
+      } catch (err: any) {
+        console.warn(`[YouTubeAdapter] Could not query existing session, starting fresh:`, err?.message || err);
+        sessionUri = null;
+      }
+    }
+
+    // Initialize a new session if needed
+    if (!sessionUri && !videoId) {
       const lines = (post.content || '').split('\n').map((l: string) => l.trim()).filter(Boolean);
       let youtubeTitle = (lines[0] || 'SocialPush Video').replace(/[\r\n\t]+/g, ' ').trim();
       if (youtubeTitle.length > 100) {
         youtubeTitle = youtubeTitle.substring(0, 97) + '...';
       }
 
+      console.log(`[YouTubeAdapter] Initializing new resumable upload session (${totalMb} MB, title: "${youtubeTitle}")...`);
       const initRes = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
         method: 'POST',
         headers: {
@@ -387,55 +551,146 @@ class YouTubeAdapter implements PlatformAdapter {
           status: { privacyStatus: YOUTUBE_PRIVACY }
         })
       });
-      
+
       if (!initRes.ok) {
         const errorText = await initRes.text();
         throw new Error(`Failed to init YouTube upload: ${errorText}`);
       }
-      
+
       sessionUri = initRes.headers.get('location');
-      
       if (!sessionUri) throw new Error("No session URI returned from YouTube");
-      
-      await supabase.from('youtube_upload_sessions').insert({
+
+      await supabase.from('youtube_upload_sessions').upsert({
         post_id: post.id,
         user_id: account.user_id,
         session_uri: sessionUri,
         bytes_uploaded: 0,
         status: 'in_progress'
-      });
+      }, { onConflict: 'post_id' });
     }
-    
-    // 2. Upload bytes
-    const uploadRes = await fetch(sessionUri, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${activeToken}`,
-        'Content-Length': fileSize.toString(),
-        'Content-Type': 'video/mp4'
-      },
-      body: videoBuffer
-    });
-    
-    if (!uploadRes.ok) {
-      const errorText = await uploadRes.text();
+
+    // 2. Upload bytes in 4 MB chunks (Google requires multiples of 256 KB = 262,144 bytes)
+    const CHUNK_SIZE = 4 * 1024 * 1024;
+    while (!videoId && offset < fileSize) {
+      const end = Math.min(offset + CHUNK_SIZE, fileSize);
+      const chunk = videoBuffer.subarray(offset, end);
+      const contentRange = `bytes ${offset}-${end - 1}/${fileSize}`;
+      const percent = Math.round((end / fileSize) * 100);
+      const uploadedMb = (end / (1024 * 1024)).toFixed(1);
+
+      console.log(`[YouTubeAdapter] Uploading video chunk: ${uploadedMb}/${totalMb} MB (${percent}%) [Range: ${offset}-${end - 1}]`);
+
+      let chunkSuccess = false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const chunkRes = await fetch(sessionUri!, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${activeToken}`,
+              'Content-Type': 'video/mp4',
+              'Content-Range': contentRange,
+              'Content-Length': chunk.byteLength.toString()
+            },
+            body: chunk as any
+          });
+
+          if (chunkRes.status === 200 || chunkRes.status === 201) {
+            const data = await chunkRes.json();
+            videoId = data.id;
+            chunkSuccess = true;
+            offset = end;
+            break;
+          } else if (chunkRes.status === 308) {
+            // Google HTTP 308 Resume Incomplete
+            const rangeHdr = chunkRes.headers.get('Range');
+            if (rangeHdr) {
+              const m = rangeHdr.match(/bytes=0-(\d+)/);
+              if (m) {
+                offset = parseInt(m[1], 10) + 1;
+              } else {
+                offset = end;
+              }
+            } else {
+              offset = end;
+            }
+            chunkSuccess = true;
+            break;
+          } else {
+            const errText = await chunkRes.text().catch(() => '');
+            throw new Error(`Google upload returned HTTP ${chunkRes.status}: ${errText}`);
+          }
+        } catch (chunkErr: any) {
+          console.warn(`[YouTubeAdapter] Chunk at offset ${offset} failed (attempt ${attempt}/3): ${chunkErr?.message || chunkErr}`);
+          if (attempt === 3) throw chunkErr;
+
+          // Back off and recover committed offset from Google before retrying
+          await new Promise(r => setTimeout(r, 2000 * attempt));
+          try {
+            const recRes = await fetch(sessionUri!, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${activeToken}`,
+                'Content-Range': `bytes */${fileSize}`,
+                'Content-Length': '0'
+              }
+            });
+            if (recRes.status === 200 || recRes.status === 201) {
+              const recData = await recRes.json().catch(() => ({}));
+              if (recData.id) {
+                videoId = recData.id;
+                chunkSuccess = true;
+                offset = fileSize;
+                break;
+              }
+            } else if (recRes.status === 308) {
+              const recRange = recRes.headers.get('Range');
+              if (recRange) {
+                const m = recRange.match(/bytes=0-(\d+)/);
+                if (m) {
+                  const recOffset = parseInt(m[1], 10) + 1;
+                  if (recOffset > offset) {
+                    console.log(`[YouTubeAdapter] Recovered server offset: ${(recOffset / (1024 * 1024)).toFixed(1)}/${totalMb} MB`);
+                    offset = recOffset;
+                    chunkSuccess = true;
+                    break;
+                  }
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+
+      if (!chunkSuccess) {
+        if (sessionUri) {
+          await supabase.from('youtube_upload_sessions').update({ status: 'failed' }).eq('session_uri', sessionUri);
+        }
+        throw new Error(`Failed to upload YouTube chunk at offset ${offset} after 3 attempts`);
+      }
+    }
+
+    if (!videoId) {
+      throw new Error("YouTube upload finished without returning a video ID");
+    }
+
+    if (sessionUri) {
       await supabase.from('youtube_upload_sessions').update({
-        status: 'failed'
+        bytes_uploaded: fileSize,
+        status: 'completed',
+        video_id: videoId
       }).eq('session_uri', sessionUri);
-      throw new Error(`Failed to upload to YouTube: ${errorText}`);
     }
-    
-    const uploadData = await uploadRes.json();
-    const videoId = uploadData.id;
-    
-    await supabase.from('youtube_upload_sessions').update({
-      bytes_uploaded: fileSize,
-      status: 'completed',
-      video_id: videoId
-    }).eq('session_uri', sessionUri);
-    
-    // 3. Poll status
-    await this.getStatus(videoId, activeToken, post.id);
+
+    // 3. Immediately record published post!
+    await recordPublishedPost(post, 'youtube', videoId, 'video');
+    console.log(`[YouTubeAdapter] Video ${videoId} successfully published and recorded to published_posts.`);
+
+    // 4. Poll status (best-effort, does not block or fail already published video)
+    try {
+      await this.getStatus(videoId, activeToken, post.id);
+    } catch (statusErr: any) {
+      console.warn(`[YouTubeAdapter] Status check note for video ${videoId}:`, statusErr?.message || statusErr);
+    }
   }
   
   async getStatus(videoId: string, token: string, postId: string) {
@@ -502,11 +757,9 @@ class LinkedInAdapter implements PlatformAdapter {
     // 1. Upload Media if present
     if (mediaUrl) {
       console.log(`[LinkedInAdapter] Uploading media for post ${post.id}...`);
-      const mediaRes = await fetch(mediaUrl);
-      if (!mediaRes.ok) throw new Error(`Failed to fetch media from ${mediaUrl}`);
-      const mediaBuffer = await mediaRes.arrayBuffer();
+      const { buffer: mediaBuffer, mime } = await getMediaBuffer(mediaUrl);
       
-      const isVideo = contentType === 'reel' || mediaUrl.match(/\.(mp4|mov|avi|mkv)(\?.*)?$/i);
+      const isVideo = contentType === 'reel' || mediaUrl.match(/\.(mp4|mov|avi|mkv)(\?.*)?$/i) || mime.startsWith('video/');
       const action = isVideo ? 'videos' : 'images';
 
       // Initialize Upload
@@ -686,14 +939,13 @@ class PinterestAdapter implements PlatformAdapter {
       const videoUrl = pinterestMediaUrl(post);
       if (!videoUrl) throw new Error('No video URL provided for Pinterest Reel');
 
-      const videoRes = await fetch(videoUrl);
-      const videoBuffer = await videoRes.arrayBuffer();
+      const { buffer: videoBuffer } = await getMediaBuffer(videoUrl);
 
       const formData = new FormData();
       for (const key in upload_parameters) {
         formData.append(key, upload_parameters[key]);
       }
-      formData.append('file', new Blob([videoBuffer], { type: 'video/mp4' }), 'video.mp4');
+      formData.append('file', new Blob([videoBuffer as any], { type: 'video/mp4' }), 'video.mp4');
 
       const uploadRes = await fetch(upload_url, {
         method: 'POST',
@@ -912,9 +1164,15 @@ const adapters: Record<string, PlatformAdapter> = {
 
 app.post('/api/v1/publish/:jobId', async (req, res) => {
   const { jobId } = req.params;
+  const startTime = Date.now();
+  console.log(`[PublishingService] [${new Date().toISOString()}] Incoming publish request for job: ${jobId}`);
   
   const { data: job, error: jobError } = await supabase.from('publish_jobs').select('*').eq('id', jobId).single();
-  if (jobError || !job) return res.status(404).json({ error: 'Job not found' });
+  if (jobError || !job) {
+    console.warn(`[PublishingService] Job ${jobId} not found in database`);
+    return res.status(404).json({ error: 'Job not found' });
+  }
+  console.log(`[PublishingService] Processing job ${jobId}: platform=${job.platform}, content_type=${job.content_type || 'post'}`);
 
   // Idempotency guard: a worker crash or BullMQ stalled-job redelivery can call this endpoint again for a job
   // that already published successfully (the actual platform call and recordPublishedPost() below both finished,
@@ -956,10 +1214,13 @@ app.post('/api/v1/publish/:jobId', async (req, res) => {
     const accessToken = decrypt(account.access_token_encrypted);
     await adapter.publish(post, account, accessToken, job.content_type, job);
     
+    const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[PublishingService] [SUCCESS] Published job ${jobId} to ${job.platform} in ${durationSec}s`);
     res.json({ success: true, message: `Published to ${job.platform}` });
   } catch (error: any) {
+    const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
     const detail = error?.cause?.message ? `${error.message} (${error.cause.message})` : (error?.message || 'Failed to publish');
-    console.error(`[PublishingService] Error publishing job ${jobId}:`, detail);
+    console.error(`[PublishingService] [ERROR] Job ${jobId} (${job.platform}) failed after ${durationSec}s:`, detail);
     if (detail.includes('rate limit reached')) {
       return res.status(429).json({ error: detail });
     }
@@ -972,5 +1233,13 @@ const server = app.listen(PORT, () => console.log(`Publishing Service listening 
 // Crucial for long video uploads and polling loops: prevent Node 18/20/22 default 60s headersTimeout
 server.headersTimeout = 600_000; // 10 minutes
 server.requestTimeout = 600_000; // 10 minutes
-server.keepAliveTimeout = 120_000; // 2 minutes
+server.keepAliveTimeout = 60_000; // 1 minute
 server.timeout = 600_000; // 10 minutes
+
+server.on('clientError', (err: any, socket: any) => {
+  if (err?.code === 'ECONNRESET' || !socket.writable) return;
+  console.warn('[PublishingService] Client socket error:', err.message || err);
+  try {
+    socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+  } catch {}
+});
